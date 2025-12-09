@@ -32,8 +32,7 @@
     "category": "Kanban",
     "description": "When I edit a card, it's showing an input for the description refactor to also show a text area for description like we do on the add card, add feature card.",
     "steps": [],
-    "status": "in_progress",
-    "startedAt": "2025-12-09T13:48:07.718Z"
+    "status": "in_progress"
   },
   {
     "id": "feature-1765287613626-z01cksyg6",
@@ -53,6 +52,13 @@
     "id": "feature-1765288256029-ask2y1gq2",
     "category": "Agent Runner",
     "description": "Can you please add a shortcut for starting a new session?",
+    "steps": [],
+    "status": "verified"
+  },
+  {
+    "id": "feature-1765288315355-ihrm3jz83",
+    "category": "Kanban",
+    "description": "Can you please refactor it so if I were to press one of the number keys on my keyboard when the output modal is open, just go ahead and auto collapse it if it was the same number that I had open. If I were to press a different number on my number key, don't actually close it again.",
     "steps": [],
     "status": "verified"
   }

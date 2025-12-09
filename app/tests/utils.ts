@@ -894,6 +894,10 @@ export async function setupMockProjectWithInProgressFeatures(
       };
 
       localStorage.setItem("automaker-storage", JSON.stringify(mockState));
+
+      // Also store features in a global variable that the mock electron API can use
+      // This is needed because the board-view loads features from the file system
+      (window as any).__mockFeatures = mockFeatures;
     },
     options
   );
@@ -1253,6 +1257,29 @@ export async function getVisibleNavItems(page: Page): Promise<string[]> {
  */
 export async function pressShortcut(page: Page, key: string): Promise<void> {
   await page.keyboard.press(key);
+}
+
+/**
+ * Count the number of session items in the session list
+ */
+export async function countSessionItems(page: Page): Promise<number> {
+  const sessionList = page.locator('[data-testid="session-list"] [data-testid^="session-item-"]');
+  return await sessionList.count();
+}
+
+/**
+ * Wait for a new session to be created (by checking if a session item appears)
+ */
+export async function waitForNewSession(
+  page: Page,
+  options?: { timeout?: number }
+): Promise<void> {
+  // Wait for any session item to appear
+  const sessionItem = page.locator('[data-testid^="session-item-"]').first();
+  await sessionItem.waitFor({
+    timeout: options?.timeout ?? 5000,
+    state: "visible",
+  });
 }
 
 /**
@@ -1649,4 +1676,28 @@ export async function setupMockProjectWithSkipTestsFeatures(
     },
     options
   );
+}
+
+/**
+ * Press a number key (0-9) on the keyboard
+ */
+export async function pressNumberKey(page: Page, num: number): Promise<void> {
+  await page.keyboard.press(num.toString());
+}
+
+/**
+ * Get the modal title/description text to verify which feature's output is being shown
+ */
+export async function getAgentOutputModalDescription(page: Page): Promise<string | null> {
+  const modal = page.locator('[data-testid="agent-output-modal"]');
+  const description = modal.locator('[id="radix-\\:r.+\\:-description"]').first();
+  return await description.textContent().catch(() => null);
+}
+
+/**
+ * Check the dialog description content in the agent output modal
+ */
+export async function getOutputModalDescription(page: Page): Promise<string | null> {
+  const modalDescription = page.locator('[data-testid="agent-output-modal"] [data-slot="dialog-description"]');
+  return await modalDescription.textContent().catch(() => null);
 }

@@ -698,6 +698,30 @@ export function BoardView() {
     setShowOutputModal(true);
   };
 
+  // Handle number key press when output modal is open
+  const handleOutputModalNumberKeyPress = useCallback((key: string) => {
+    // Convert key to index: 1-9 -> 0-8, 0 -> 9
+    const index = key === "0" ? 9 : parseInt(key, 10) - 1;
+
+    // Get the feature at that index from in-progress features
+    const targetFeature = inProgressFeaturesForShortcuts[index];
+
+    if (!targetFeature) {
+      // No feature at this index, do nothing
+      return;
+    }
+
+    // If pressing the same number key as the currently open feature, close the modal
+    if (targetFeature.id === outputFeature?.id) {
+      setShowOutputModal(false);
+    }
+    // If pressing a different number key, switch to that feature's output
+    else {
+      setOutputFeature(targetFeature);
+      // Modal stays open, just showing different content
+    }
+  }, [inProgressFeaturesForShortcuts, outputFeature?.id]);
+
   const handleForceStopFeature = async (feature: Feature) => {
     try {
       await autoMode.stopFeature(feature.id);
@@ -1209,6 +1233,7 @@ export function BoardView() {
         onClose={() => setShowOutputModal(false)}
         featureDescription={outputFeature?.description || ""}
         featureId={outputFeature?.id || ""}
+        onNumberKeyPress={handleOutputModalNumberKeyPress}
       />
 
       {/* Delete All Verified Dialog */}

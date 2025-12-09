@@ -16,6 +16,8 @@ interface AgentOutputModalProps {
   onClose: () => void;
   featureDescription: string;
   featureId: string;
+  /** Called when a number key (0-9) is pressed while the modal is open */
+  onNumberKeyPress?: (key: string) => void;
 }
 
 export function AgentOutputModal({
@@ -23,6 +25,7 @@ export function AgentOutputModal({
   onClose,
   featureDescription,
   featureId,
+  onNumberKeyPress,
 }: AgentOutputModalProps) {
   const [output, setOutput] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -168,6 +171,29 @@ export function AgentOutputModal({
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
     autoScrollRef.current = isAtBottom;
   };
+
+  // Handle number key presses while modal is open
+  useEffect(() => {
+    if (!open || !onNumberKeyPress) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if a number key (0-9) was pressed without modifiers
+      if (
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        /^[0-9]$/.test(event.key)
+      ) {
+        event.preventDefault();
+        onNumberKeyPress(event.key);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onNumberKeyPress]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

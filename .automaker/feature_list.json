@@ -44,5 +44,12 @@
       "try to scroll "
     ],
     "status": "verified"
+  },
+  {
+    "id": "feature-1765310151816-plx1pxl0z",
+    "category": "Kanban",
+    "description": "So i want to improve the look of the view of agent output modal its just plain text and im thinking to parse it better and kinda make it look like the last image of coolify logs nice colorded and somehow grouped into some types of info / debug so in our case like prompt / tool call etc",
+    "steps": [],
+    "status": "verified"
   }
 ]

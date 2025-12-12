@@ -351,6 +351,7 @@ export interface AutoModeActivity {
   tool?: string;
   passes?: boolean;
   phase?: "planning" | "action" | "verification";
+  errorType?: "authentication" | "execution";
 }
 
 export interface AppActions {

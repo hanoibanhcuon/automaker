@@ -119,7 +119,10 @@ describe("auto-mode-service.ts (integration)", () => {
       );
 
       // Verify feature status was updated to backlog (error status)
-      const feature = await featureLoader.get(testRepo.path, "test-feature-error");
+      const feature = await featureLoader.get(
+        testRepo.path,
+        "test-feature-error"
+      );
       expect(feature?.status).toBe("backlog");
     }, 30000);
 
@@ -154,7 +157,10 @@ describe("auto-mode-service.ts (integration)", () => {
       );
 
       // Feature should be updated successfully
-      const feature = await featureLoader.get(testRepo.path, "test-no-worktree");
+      const feature = await featureLoader.get(
+        testRepo.path,
+        "test-no-worktree"
+      );
       expect(feature?.status).toBe("waiting_approval");
     }, 30000);
   });
@@ -313,7 +319,9 @@ describe("auto-mode-service.ts (integration)", () => {
       );
 
       // Should have used claude-sonnet-4-20250514
-      expect(ProviderFactory.getProviderForModel).toHaveBeenCalledWith("claude-sonnet-4-20250514");
+      expect(ProviderFactory.getProviderForModel).toHaveBeenCalledWith(
+        "claude-sonnet-4-20250514"
+      );
     }, 30000);
   });
 
@@ -447,9 +455,11 @@ describe("auto-mode-service.ts (integration)", () => {
       await service.stopAutoLoop();
       await startPromise.catch(() => {});
 
-      // Check stop event was emitted (auto_mode_complete event)
-      const stopEvent = mockEvents.emit.mock.calls.find((call) =>
-        call[1]?.type === "auto_mode_complete" || call[1]?.message?.includes("stopped")
+      // Check stop event was emitted (emitted immediately by stopAutoLoop)
+      const stopEvent = mockEvents.emit.mock.calls.find(
+        (call) =>
+          call[1]?.type === "auto_mode_stopped" ||
+          call[1]?.message?.includes("Auto mode stopped")
       );
       expect(stopEvent).toBeTruthy();
     }, 10000);
@@ -476,12 +486,7 @@ describe("auto-mode-service.ts (integration)", () => {
       );
 
       // Should not throw
-      await service.executeFeature(
-        testRepo.path,
-        "error-feature",
-        true,
-        false
-      );
+      await service.executeFeature(testRepo.path, "error-feature", true, false);
 
       // Feature should be marked as backlog (error status)
       const feature = await featureLoader.get(testRepo.path, "error-feature");

@@ -152,20 +152,25 @@ export class AutoModeService {
     }
 
     this.autoLoopRunning = false;
-    this.emitAutoModeEvent("auto_mode_stopped", {
-      message: "Auto mode stopped",
-      projectPath: this.config?.projectPath,
-    });
   }
 
   /**
    * Stop the auto mode loop
    */
   async stopAutoLoop(): Promise<number> {
+    const wasRunning = this.autoLoopRunning;
     this.autoLoopRunning = false;
     if (this.autoLoopAbortController) {
       this.autoLoopAbortController.abort();
       this.autoLoopAbortController = null;
+    }
+
+    // Emit stop event immediately when user explicitly stops
+    if (wasRunning) {
+      this.emitAutoModeEvent("auto_mode_stopped", {
+        message: "Auto mode stopped",
+        projectPath: this.config?.projectPath,
+      });
     }
 
     return this.runningFeatures.size;

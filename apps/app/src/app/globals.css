@@ -2522,29 +2522,33 @@
   z-index: 0;
 }
 
-/* Accordion animations */
+/* Accordion animations - CSS-only approach */
 @keyframes accordion-down {
   from {
     height: 0;
+    opacity: 0;
   }
   to {
-    height: var(--radix-accordion-content-height);
+    height: var(--accordion-content-height, auto);
+    opacity: 1;
   }
 }
 
 @keyframes accordion-up {
   from {
-    height: var(--radix-accordion-content-height);
+    height: var(--accordion-content-height, auto);
+    opacity: 1;
   }
   to {
     height: 0;
+    opacity: 0;
   }
 }
 
 .animate-accordion-down {
-  animation: accordion-down 0.2s ease-out;
+  animation: accordion-down 0.2s ease-out forwards;
 }
 
 .animate-accordion-up {
-  animation: accordion-up 0.2s ease-out;
+  animation: accordion-up 0.2s ease-out forwards;
 }

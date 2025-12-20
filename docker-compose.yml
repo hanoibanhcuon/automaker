@@ -59,11 +59,12 @@ services:
       # If you need to work on a project, create it INSIDE the container
       # or use a separate docker-compose override file
 
-    # Security: Run as non-root user (already set in Dockerfile)
+    # Security: Server runs as non-root user (already set in Dockerfile)
     # Security: No privileged mode
     # Security: No host network access
     # Security: No host filesystem mounts
 
 volumes:
   automaker-data:
+    name: automaker-data
     # Named volume - completely isolated from host filesystem

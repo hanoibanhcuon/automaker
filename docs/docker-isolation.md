@@ -33,7 +33,7 @@ This guide covers running Automaker in a fully isolated Docker container. For ba
 The default `docker-compose.yml` configuration:
 
 - Uses only Docker-managed volumes (no host filesystem access)
-- Runs as a non-root user
+- Server runs as a non-root user
 - Has no privileged access to your system
 
 Projects created in the UI are stored inside the container at `/projects` and persist across restarts via Docker volumes.
@@ -59,8 +59,8 @@ docker-compose -f docker-compose.yml -f docker-compose.project.yml up -d
 
 ## Troubleshooting
 
-| Problem               | Solution                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| Container won't start | Check `.env` has `ANTHROPIC_API_KEY` set. Run `docker-compose logs` for errors.                        |
-| Can't access web UI   | Verify container is running with `docker ps \| grep automaker`                                         |
-| Need a fresh start    | Run `docker-compose down && docker volume rm automaker_automaker-data && docker-compose up -d --build` |
+| Problem               | Solution                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| Container won't start | Check `.env` has `ANTHROPIC_API_KEY` set. Run `docker-compose logs` for errors.              |
+| Can't access web UI   | Verify container is running with `docker ps \| grep automaker`                               |
+| Need a fresh start    | Run `docker-compose down && docker volume rm automaker-data && docker-compose up -d --build` |

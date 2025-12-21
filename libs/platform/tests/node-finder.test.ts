@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { findNodeExecutable, buildEnhancedPath } from '../src/node-finder.js';
 import path from 'path';
+import fs from 'fs';
 
 describe('node-finder', () => {
   describe('findNodeExecutable', () => {
@@ -50,6 +51,25 @@ describe('node-finder', () => {
         'fallback',
       ];
       expect(validSources).toContain(result.source);
+    });
+
+    it('should find an executable node binary', () => {
+      const result = findNodeExecutable();
+
+      // Skip this test if fallback is used (node not found via path search)
+      if (result.source === 'fallback') {
+        expect(result.nodePath).toBe('node');
+        return;
+      }
+
+      // Verify the found path is actually executable
+      if (process.platform === 'win32') {
+        // On Windows, just check file exists (X_OK is not meaningful)
+        expect(() => fs.accessSync(result.nodePath, fs.constants.F_OK)).not.toThrow();
+      } else {
+        // On Unix-like systems, verify execute permission
+        expect(() => fs.accessSync(result.nodePath, fs.constants.X_OK)).not.toThrow();
+      }
     });
   });
 

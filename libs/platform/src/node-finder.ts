@@ -45,8 +45,31 @@ export interface NodeFinderOptions {
 }
 
 /**
+ * Check if a file exists and is executable
+ * On Windows, only checks existence (X_OK is not meaningful)
+ */
+function isExecutable(filePath: string): boolean {
+  try {
+    if (process.platform === 'win32') {
+      // On Windows, fs.constants.X_OK is not meaningful - just check existence
+      fs.accessSync(filePath, fs.constants.F_OK);
+    } else {
+      // On Unix-like systems, check for execute permission
+      fs.accessSync(filePath, fs.constants.X_OK);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Find Node.js executable from version manager directories (NVM, fnm)
  * Uses semantic version sorting to prefer the latest version
+ *
+ * Note: Version sorting uses localeCompare with numeric:true which handles most cases
+ * correctly (e.g., v18.17.0 > v18.9.0) but may not perfectly sort pre-release versions
+ * (e.g., v20.0.0-beta vs v19.9.9). This is acceptable as we prefer the latest stable.
  */
 function findNodeFromVersionManager(
   basePath: string,
@@ -63,7 +86,7 @@ function findNodeFromVersionManager(
 
     for (const version of versions) {
       const nodePath = path.join(basePath, version, binSubpath);
-      if (fs.existsSync(nodePath)) {
+      if (isExecutable(nodePath)) {
         return nodePath;
       }
     }
@@ -87,13 +110,13 @@ function findNodeMacOS(homeDir: string): NodeFinderResult | null {
   ];
 
   for (const nodePath of homebrewPaths) {
-    if (fs.existsSync(nodePath)) {
+    if (isExecutable(nodePath)) {
       return { nodePath, source: 'homebrew' };
     }
   }
 
   // System Node
-  if (fs.existsSync('/usr/bin/node')) {
+  if (isExecutable('/usr/bin/node')) {
     return { nodePath: '/usr/bin/node', source: 'system' };
   }
 
@@ -133,7 +156,7 @@ function findNodeLinux(homeDir: string): NodeFinderResult | null {
   ];
 
   for (const nodePath of systemPaths) {
-    if (fs.existsSync(nodePath)) {
+    if (isExecutable(nodePath)) {
       return { nodePath, source: 'system' };
     }
   }
@@ -172,7 +195,7 @@ function findNodeWindows(homeDir: string): NodeFinderResult | null {
   ];
 
   for (const nodePath of programFilesPaths) {
-    if (fs.existsSync(nodePath)) {
+    if (isExecutable(nodePath)) {
       return { nodePath, source: 'program-files' };
     }
   }
@@ -206,7 +229,7 @@ function findNodeWindows(homeDir: string): NodeFinderResult | null {
 
   // Scoop installation
   const scoopPath = path.join(homeDir, 'scoop', 'apps', 'nodejs', 'current', 'node.exe');
-  if (fs.existsSync(scoopPath)) {
+  if (isExecutable(scoopPath)) {
     return { nodePath: scoopPath, source: 'scoop' };
   }
 
@@ -216,7 +239,7 @@ function findNodeWindows(homeDir: string): NodeFinderResult | null {
     'bin',
     'node.exe'
   );
-  if (fs.existsSync(chocoPath)) {
+  if (isExecutable(chocoPath)) {
     return { nodePath: chocoPath, source: 'chocolatey' };
   }
 
@@ -240,8 +263,8 @@ function findNodeViaShell(
     // 'where' on Windows can return multiple lines, take the first
     const nodePath = result.split(/\r?\n/)[0];
 
-    // Validate path: check for null bytes (security) and existence
-    if (nodePath && !nodePath.includes('\x00') && fs.existsSync(nodePath)) {
+    // Validate path: check for null bytes (security) and executable permission
+    if (nodePath && !nodePath.includes('\x00') && isExecutable(nodePath)) {
       return {
         nodePath,
         source: platform === 'win32' ? 'where' : 'which',

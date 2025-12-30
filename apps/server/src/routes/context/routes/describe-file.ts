@@ -13,10 +13,11 @@
 import type { Request, Response } from 'express';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createLogger } from '@automaker/utils';
-import { DEFAULT_PHASE_MODELS } from '@automaker/types';
+import { DEFAULT_PHASE_MODELS, isCursorModel } from '@automaker/types';
 import { PathNotAllowedError } from '@automaker/platform';
 import { resolveModelString } from '@automaker/model-resolver';
 import { createCustomOptions } from '../../../lib/sdk-options.js';
+import { ProviderFactory } from '../../../providers/provider-factory.js';
 import * as secureFs from '../../../lib/secure-fs.js';
 import * as path from 'path';
 import type { SettingsService } from '../../../services/settings-service.js';
@@ -187,30 +188,64 @@ File: ${fileName}${truncated ? ' (truncated)' : ''}`;
 
       logger.debug(`[DescribeFile] Using model: ${model}`);
 
-      // Use centralized SDK options with proper cwd validation
-      // No tools needed since we're passing file content directly
-      const sdkOptions = createCustomOptions({
-        cwd,
-        model,
-        maxTurns: 1,
-        allowedTools: [],
-        autoLoadClaudeMd,
-        sandbox: { enabled: true, autoAllowBashIfSandboxed: true },
-      });
+      let description: string;
 
-      const promptGenerator = (async function* () {
-        yield {
-          type: 'user' as const,
-          session_id: '',
-          message: { role: 'user' as const, content: promptContent },
-          parent_tool_use_id: null,
-        };
-      })();
+      // Route to appropriate provider based on model type
+      if (isCursorModel(model)) {
+        // Use Cursor provider for Cursor models
+        logger.info(`[DescribeFile] Using Cursor provider for model: ${model}`);
 
-      const stream = query({ prompt: promptGenerator, options: sdkOptions });
+        const provider = ProviderFactory.getProviderForModel(model);
 
-      // Extract the description from the response
-      const description = await extractTextFromStream(stream);
+        // Build a simple text prompt for Cursor (no multi-part content blocks)
+        const cursorPrompt = `${instructionText}\n\n--- FILE CONTENT ---\n${contentToAnalyze}`;
+
+        let responseText = '';
+        for await (const msg of provider.executeQuery({
+          prompt: cursorPrompt,
+          model,
+          cwd,
+          maxTurns: 1,
+          allowedTools: [],
+        })) {
+          if (msg.type === 'assistant' && msg.message?.content) {
+            for (const block of msg.message.content) {
+              if (block.type === 'text' && block.text) {
+                responseText += block.text;
+              }
+            }
+          }
+        }
+        description = responseText;
+      } else {
+        // Use Claude SDK for Claude models
+        logger.info(`[DescribeFile] Using Claude SDK for model: ${model}`);
+
+        // Use centralized SDK options with proper cwd validation
+        // No tools needed since we're passing file content directly
+        const sdkOptions = createCustomOptions({
+          cwd,
+          model,
+          maxTurns: 1,
+          allowedTools: [],
+          autoLoadClaudeMd,
+          sandbox: { enabled: true, autoAllowBashIfSandboxed: true },
+        });
+
+        const promptGenerator = (async function* () {
+          yield {
+            type: 'user' as const,
+            session_id: '',
+            message: { role: 'user' as const, content: promptContent },
+            parent_tool_use_id: null,
+          };
+        })();
+
+        const stream = query({ prompt: promptGenerator, options: sdkOptions });
+
+        // Extract the description from the response
+        description = await extractTextFromStream(stream);
+      }
 
       if (!description || description.trim().length === 0) {
         logger.warn('Received empty response from Claude');

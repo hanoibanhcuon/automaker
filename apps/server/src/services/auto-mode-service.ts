@@ -1146,7 +1146,7 @@ Format your response as a structured markdown document.`;
       const projectAnalysisModel =
         settings?.phaseModels?.projectAnalysisModel || DEFAULT_PHASE_MODELS.projectAnalysisModel;
       const analysisModel = resolveModelString(projectAnalysisModel, DEFAULT_MODELS.claude);
-      this.logger.info('[AutoMode] Using model for project analysis:', analysisModel);
+      console.log('[AutoMode] Using model for project analysis:', analysisModel);
 
       const provider = ProviderFactory.getProviderForModel(analysisModel);
 

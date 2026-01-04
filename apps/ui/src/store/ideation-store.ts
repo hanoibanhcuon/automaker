@@ -21,6 +21,7 @@ export type GenerationJobStatus = 'generating' | 'ready' | 'error';
 
 export interface GenerationJob {
   id: string;
+  projectPath: string;
   prompt: IdeationPrompt;
   status: GenerationJobStatus;
   suggestions: AnalysisSuggestion[];
@@ -76,7 +77,7 @@ interface IdeationActions {
   getSelectedIdea: () => Idea | null;
 
   // Generation Jobs
-  addGenerationJob: (prompt: IdeationPrompt) => string;
+  addGenerationJob: (projectPath: string, prompt: IdeationPrompt) => string;
   updateJobStatus: (
     jobId: string,
     status: GenerationJobStatus,
@@ -172,10 +173,11 @@ export const useIdeationStore = create<IdeationState & IdeationActions>()(
       },
 
       // Generation Jobs
-      addGenerationJob: (prompt) => {
-        const jobId = `job-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      addGenerationJob: (projectPath, prompt) => {
+        const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
         const job: GenerationJob = {
           id: jobId,
+          projectPath,
           prompt,
           status: 'generating',
           suggestions: [],
@@ -311,7 +313,7 @@ export const useIdeationStore = create<IdeationState & IdeationActions>()(
     }),
     {
       name: 'automaker-ideation-store',
-      version: 3,
+      version: 4,
       partialize: (state) => ({
         // Only persist these fields
         ideas: state.ideas,
@@ -319,6 +321,18 @@ export const useIdeationStore = create<IdeationState & IdeationActions>()(
         analysisResult: state.analysisResult,
         filterStatus: state.filterStatus,
       }),
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Record<string, unknown>;
+        if (version < 4) {
+          // Remove legacy jobs that don't have projectPath (from before project-scoping was added)
+          const jobs = (state.generationJobs as GenerationJob[]) || [];
+          return {
+            ...state,
+            generationJobs: jobs.filter((job) => job.projectPath !== undefined),
+          };
+        }
+        return state;
+      },
     }
   )
 );

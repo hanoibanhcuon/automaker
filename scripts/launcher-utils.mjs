@@ -558,14 +558,7 @@ export function setupSignalHandlers(cleanup) {
  * @param {object} options - Configuration options
  * @returns {Promise<ChildProcess>} - Server process
  */
-export async function startServerAndWait({
-  serverPort,
-  corsOriginEnv,
-  npmArgs,
-  cwd,
-  fs,
-  baseDir,
-}) {
+export async function startServerAndWait({ serverPort, corsOriginEnv, npmArgs, cwd, fs, baseDir }) {
   log(`Starting backend server on port ${serverPort}...`, 'blue');
 
   // Create logs directory

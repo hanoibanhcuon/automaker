@@ -96,9 +96,7 @@ export function createGenerateTitleHandler(): (req: Request, res: Response) => P
           systemPrompt: SYSTEM_PROMPT,
           maxTurns: 1,
           allowedTools: [],
-          // AUTONOMOUS MODE: Always bypass permissions
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'default',
         },
       });
 

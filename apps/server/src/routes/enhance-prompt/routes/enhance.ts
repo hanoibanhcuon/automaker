@@ -164,9 +164,7 @@ export function createEnhanceHandler(
           systemPrompt,
           maxTurns: 1,
           allowedTools: [],
-          // AUTONOMOUS MODE: Always bypass permissions
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'acceptEdits',
         },
       });
 

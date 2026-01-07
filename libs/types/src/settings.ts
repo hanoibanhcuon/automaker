@@ -387,6 +387,10 @@ export interface GlobalSettings {
   /** Version number for schema migration */
   version: number;
 
+  // Migration Tracking
+  /** Whether localStorage settings have been migrated to API storage (prevents re-migration) */
+  localStorageMigrated?: boolean;
+
   // Onboarding / Setup Wizard
   /** Whether the initial setup wizard has been completed */
   setupComplete: boolean;

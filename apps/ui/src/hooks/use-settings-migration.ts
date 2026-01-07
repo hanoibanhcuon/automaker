@@ -7,9 +7,14 @@
  *
  * Migration flow:
  * 1. useSettingsMigration() hook fetches settings from the server API
- * 2. Merges localStorage data (if any) with server data, preferring more complete data
- * 3. Hydrates the Zustand store with the merged settings
- * 4. Returns a promise that resolves when hydration is complete
+ * 2. Checks if `localStorageMigrated` flag is true - if so, skips migration
+ * 3. If migration needed: merges localStorage data with server data, preferring more complete data
+ * 4. Sets `localStorageMigrated: true` in server settings to prevent re-migration
+ * 5. Hydrates the Zustand store with the merged/fetched settings
+ * 6. Returns a promise that resolves when hydration is complete
+ *
+ * IMPORTANT: localStorage values are intentionally NOT deleted after migration.
+ * This allows users to switch back to older versions of Automaker if needed.
  *
  * Sync functions for incremental updates:
  * - syncSettingsToServer: Writes global settings to file
@@ -20,7 +25,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { createLogger } from '@automaker/utils/logger';
 import { getHttpApiClient, waitForApiKeyInit } from '@/lib/http-api-client';
-import { getItem, removeItem, setItem } from '@/lib/storage';
+import { getItem, setItem } from '@/lib/storage';
 import { useAppStore, THEME_STORAGE_KEY } from '@/store/app-store';
 import { useSetupStore } from '@/store/setup-store';
 import type { GlobalSettings } from '@automaker/types';
@@ -50,18 +55,9 @@ const LOCALSTORAGE_KEYS = [
   'automaker:lastProjectDir',
 ] as const;
 
-/**
- * localStorage keys to remove after successful migration
- */
-const KEYS_TO_CLEAR_AFTER_MIGRATION = [
-  'worktree-panel-collapsed',
-  'file-browser-recent-folders',
-  'automaker:lastProjectDir',
-  'automaker_projects',
-  'automaker_current_project',
-  'automaker_trashed_projects',
-  'automaker-setup',
-] as const;
+// NOTE: We intentionally do NOT clear any localStorage keys after migration.
+// This allows users to switch back to older versions of Automaker that relied on localStorage.
+// The `localStorageMigrated` flag in server settings prevents re-migration on subsequent app loads.
 
 // Global promise that resolves when migration is complete
 // This allows useSettingsSync to wait for hydration before starting sync
@@ -101,7 +97,7 @@ export function waitForMigrationComplete(): Promise<void> {
 /**
  * Parse localStorage data into settings object
  */
-function parseLocalStorageSettings(): Partial<GlobalSettings> | null {
+export function parseLocalStorageSettings(): Partial<GlobalSettings> | null {
   try {
     const automakerStorage = getItem('automaker-storage');
     if (!automakerStorage) {
@@ -176,7 +172,7 @@ function parseLocalStorageSettings(): Partial<GlobalSettings> | null {
  * Check if localStorage has more complete data than server
  * Returns true if localStorage has projects but server doesn't
  */
-function localStorageHasMoreData(
+export function localStorageHasMoreData(
   localSettings: Partial<GlobalSettings> | null,
   serverSettings: GlobalSettings | null
 ): boolean {
@@ -210,7 +206,7 @@ function localStorageHasMoreData(
  * Merge localStorage settings with server settings
  * Prefers server data, but uses localStorage for missing arrays/objects
  */
-function mergeSettings(
+export function mergeSettings(
   serverSettings: GlobalSettings,
   localSettings: Partial<GlobalSettings> | null
 ): GlobalSettings {
@@ -293,6 +289,74 @@ function mergeSettings(
 }
 
 /**
+ * Perform settings migration from localStorage to server (async function version)
+ *
+ * This is the core migration logic extracted for use outside of React hooks.
+ * Call this from __root.tsx during app initialization.
+ *
+ * @param serverSettings - Settings fetched from the server API
+ * @returns Promise resolving to the final settings to use (merged if migration needed)
+ */
+export async function performSettingsMigration(
+  serverSettings: GlobalSettings
+): Promise<{ settings: GlobalSettings; migrated: boolean }> {
+  // Get localStorage data
+  const localSettings = parseLocalStorageSettings();
+  logger.info(
+    `localStorage has ${localSettings?.projects?.length ?? 0} projects, ${localSettings?.aiProfiles?.length ?? 0} profiles`
+  );
+  logger.info(
+    `Server has ${serverSettings.projects?.length ?? 0} projects, ${serverSettings.aiProfiles?.length ?? 0} profiles`
+  );
+
+  // Check if migration has already been completed
+  if (serverSettings.localStorageMigrated) {
+    logger.info('localStorage migration already completed, using server settings only');
+    return { settings: serverSettings, migrated: false };
+  }
+
+  // Check if localStorage has more data than server
+  if (localStorageHasMoreData(localSettings, serverSettings)) {
+    // First-time migration: merge localStorage data with server settings
+    const mergedSettings = mergeSettings(serverSettings, localSettings);
+    logger.info('Merged localStorage data with server settings (first-time migration)');
+
+    // Sync merged settings to server with migration marker
+    try {
+      const api = getHttpApiClient();
+      const updates = {
+        ...mergedSettings,
+        localStorageMigrated: true,
+      };
+
+      const result = await api.settings.updateGlobal(updates);
+      if (result.success) {
+        logger.info('Synced merged settings to server with migration marker');
+      } else {
+        logger.warn('Failed to sync merged settings to server:', result.error);
+      }
+    } catch (error) {
+      logger.error('Failed to sync merged settings:', error);
+    }
+
+    return { settings: mergedSettings, migrated: true };
+  }
+
+  // No migration needed, but mark as migrated to prevent future checks
+  if (!serverSettings.localStorageMigrated) {
+    try {
+      const api = getHttpApiClient();
+      await api.settings.updateGlobal({ localStorageMigrated: true });
+      logger.info('Marked settings as migrated (no data to migrate)');
+    } catch (error) {
+      logger.warn('Failed to set migration marker:', error);
+    }
+  }
+
+  return { settings: serverSettings, migrated: false };
+}
+
+/**
  * React hook to handle settings hydration from server on startup
  *
  * Runs automatically once on component mount. Returns state indicating whether
@@ -369,19 +433,26 @@ export function useSettingsMigration(): MigrationState {
         let needsSync = false;
 
         if (serverSettings) {
-          // Check if we need to merge localStorage data
-          if (localStorageHasMoreData(localSettings, serverSettings)) {
+          // Check if migration has already been completed
+          if (serverSettings.localStorageMigrated) {
+            logger.info('localStorage migration already completed, using server settings only');
+            finalSettings = serverSettings;
+            // Don't set needsSync - no migration needed
+          } else if (localStorageHasMoreData(localSettings, serverSettings)) {
+            // First-time migration: merge localStorage data with server settings
             finalSettings = mergeSettings(serverSettings, localSettings);
             needsSync = true;
-            logger.info('Merged localStorage data with server settings');
+            logger.info('Merged localStorage data with server settings (first-time migration)');
           } else {
             finalSettings = serverSettings;
           }
         } else if (localSettings) {
-          // No server settings, use localStorage
+          // No server settings, use localStorage (first run migration)
           finalSettings = localSettings as GlobalSettings;
           needsSync = true;
-          logger.info('Using localStorage settings (no server settings found)');
+          logger.info(
+            'Using localStorage settings (no server settings found - first-time migration)'
+          );
         } else {
           // No settings anywhere, use defaults
           logger.info('No settings found, using defaults');
@@ -394,18 +465,19 @@ export function useSettingsMigration(): MigrationState {
         hydrateStoreFromSettings(finalSettings);
         logger.info('Store hydrated with settings');
 
-        // If we merged data or used localStorage, sync to server
+        // If we merged data or used localStorage, sync to server with migration marker
         if (needsSync) {
           try {
             const updates = buildSettingsUpdateFromStore();
+            // Mark migration as complete so we don't re-migrate on next app load
+            // This preserves localStorage values for users who want to downgrade
+            (updates as Record<string, unknown>).localStorageMigrated = true;
+
             const result = await api.settings.updateGlobal(updates);
             if (result.success) {
-              logger.info('Synced merged settings to server');
-
-              // Clear old localStorage keys after successful sync
-              for (const key of KEYS_TO_CLEAR_AFTER_MIGRATION) {
-                removeItem(key);
-              }
+              logger.info('Synced merged settings to server with migration marker');
+              // NOTE: We intentionally do NOT clear localStorage values
+              // This allows users to switch back to older versions of Automaker
             } else {
               logger.warn('Failed to sync merged settings to server:', result.error);
             }

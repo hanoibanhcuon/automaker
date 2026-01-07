@@ -19,7 +19,11 @@ import {
   getServerUrlSync,
   getHttpApiClient,
 } from '@/lib/http-api-client';
-import { hydrateStoreFromSettings, signalMigrationComplete } from '@/hooks/use-settings-migration';
+import {
+  hydrateStoreFromSettings,
+  signalMigrationComplete,
+  performSettingsMigration,
+} from '@/hooks/use-settings-migration';
 import { Toaster } from 'sonner';
 import { ThemeOption, themeOptions } from '@/config/theme-options';
 import { SandboxRiskDialog } from '@/components/dialogs/sandbox-risk-dialog';
@@ -252,12 +256,19 @@ function RootLayoutContent() {
           try {
             const settingsResult = await api.settings.getGlobal();
             if (settingsResult.success && settingsResult.settings) {
-              // Hydrate store (including setupComplete)
-              // This function handles updating the store with all settings
-              // Cast through unknown first to handle type differences between API response and GlobalSettings
-              hydrateStoreFromSettings(
-                settingsResult.settings as unknown as Parameters<typeof hydrateStoreFromSettings>[0]
+              // Perform migration from localStorage if needed (first-time migration)
+              // This checks if localStorage has projects/data that server doesn't have
+              // and merges them before hydrating the store
+              const { settings: finalSettings, migrated } = await performSettingsMigration(
+                settingsResult.settings as unknown as Parameters<typeof performSettingsMigration>[0]
               );
+
+              if (migrated) {
+                logger.info('Settings migration from localStorage completed');
+              }
+
+              // Hydrate store with the final settings (merged if migration occurred)
+              hydrateStoreFromSettings(finalSettings);
 
               // Signal that settings hydration is complete so useSettingsSync can start
               signalMigrationComplete();

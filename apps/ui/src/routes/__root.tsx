@@ -18,6 +18,8 @@ import {
   verifySession,
   checkSandboxEnvironment,
   getServerUrlSync,
+  checkExternalServerMode,
+  isExternalServerMode,
 } from '@/lib/http-api-client';
 import { Toaster } from 'sonner';
 import { ThemeOption, themeOptions } from '@/config/theme-options';
@@ -188,13 +190,16 @@ function RootLayoutContent() {
         // Initialize API key for Electron mode
         await initApiKey();
 
-        // In Electron mode, we're always authenticated via header
-        if (isElectronMode()) {
+        // Check if running in external server mode (Docker API)
+        const externalMode = await checkExternalServerMode();
+
+        // In Electron mode (but NOT external server mode), we're always authenticated via header
+        if (isElectronMode() && !externalMode) {
           useAuthStore.getState().setAuthState({ isAuthenticated: true, authChecked: true });
           return;
         }
 
-        // In web mode, verify the session cookie is still valid
+        // In web mode OR external server mode, verify the session cookie is still valid
         // by making a request to an authenticated endpoint
         const isValid = await verifySession();
 
@@ -235,17 +240,20 @@ function RootLayoutContent() {
     };
   }, []);
 
-  // Routing rules (web mode):
+  // Routing rules (web mode and external server mode):
   // - If not authenticated: force /login (even /setup is protected)
   // - If authenticated but setup incomplete: force /setup
   useEffect(() => {
     if (!setupHydrated) return;
 
+    // Check if we need session-based auth (web mode OR external server mode)
+    const needsSessionAuth = !isElectronMode() || isExternalServerMode() === true;
+
     // Wait for auth check to complete before enforcing any redirects
-    if (!isElectronMode() && !authChecked) return;
+    if (needsSessionAuth && !authChecked) return;
 
     // Unauthenticated -> force /login
-    if (!isElectronMode() && !isAuthenticated) {
+    if (needsSessionAuth && !isAuthenticated) {
       if (location.pathname !== '/login') {
         navigate({ to: '/login' });
       }
@@ -351,8 +359,11 @@ function RootLayoutContent() {
     );
   }
 
-  // Wait for auth check before rendering protected routes (web mode only)
-  if (!isElectronMode() && !authChecked) {
+  // Check if we need session-based auth (web mode OR external server mode)
+  const needsSessionAuth = !isElectronMode() || isExternalServerMode() === true;
+
+  // Wait for auth check before rendering protected routes (web mode and external server mode)
+  if (needsSessionAuth && !authChecked) {
     return (
       <main className="flex h-screen items-center justify-center" data-testid="app-container">
         <LoadingState message="Loading..." />
@@ -360,9 +371,9 @@ function RootLayoutContent() {
     );
   }
 
-  // Redirect to login if not authenticated (web mode)
+  // Redirect to login if not authenticated (web mode and external server mode)
   // Show loading state while navigation to login is in progress
-  if (!isElectronMode() && !isAuthenticated) {
+  if (needsSessionAuth && !isAuthenticated) {
     return (
       <main className="flex h-screen items-center justify-center" data-testid="app-container">
         <LoadingState message="Redirecting to login..." />

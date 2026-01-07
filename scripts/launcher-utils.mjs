@@ -500,6 +500,7 @@ export function printModeMenu({ isDev = false } = {}) {
   console.log('  2) Desktop Application (Electron)');
   if (isDev) {
     console.log('  3) Docker Container (Dev with Live Reload)');
+    console.log('  4) Electron + Docker API (Local Electron, Container API)');
   } else {
     console.log('  3) Docker Container (Isolated)');
   }
@@ -881,6 +882,123 @@ export async function launchDockerDevContainers({ baseDir, processes }) {
   await new Promise((resolve) => {
     processes.docker.on('close', resolve);
   });
+}
+
+/**
+ * Launch only the Docker server container for use with local Electron
+ * Uses docker-compose.dev-server.yml which only runs the backend API
+ * Also includes docker-compose.override.yml if it exists (for workspace mounts)
+ * Automatically launches Electron once the server is healthy.
+ * @param {object} options - Configuration options
+ * @param {string} options.baseDir - Base directory containing docker-compose.dev-server.yml
+ * @param {object} options.processes - Processes object to track docker process
+ * @returns {Promise<void>}
+ */
+export async function launchDockerDevServerContainer({ baseDir, processes }) {
+  log('Launching Docker Server Container + Local Electron...', 'blue');
+  console.log('');
+
+  // Check if ANTHROPIC_API_KEY is set
+  if (!process.env.ANTHROPIC_API_KEY) {
+    log('Warning: ANTHROPIC_API_KEY environment variable is not set.', 'yellow');
+    log('The server will require an API key to function.', 'yellow');
+    log('Set it with: export ANTHROPIC_API_KEY=your-key', 'yellow');
+    console.log('');
+  }
+
+  log('Starting server container...', 'yellow');
+  log('Source code is volume mounted for live reload', 'yellow');
+  log('Running npm install inside container (this may take a moment on first run)...', 'yellow');
+  console.log('');
+
+  // Build compose file arguments
+  // Start with dev-server compose file, then add override if it exists
+  const composeArgs = ['compose', '-f', 'docker-compose.dev-server.yml'];
+
+  // Check if docker-compose.override.yml exists and include it for workspace mounts
+  const overridePath = path.join(baseDir, 'docker-compose.override.yml');
+  if (fsNative.existsSync(overridePath)) {
+    composeArgs.push('-f', 'docker-compose.override.yml');
+    log('Using docker-compose.override.yml for workspace mount', 'yellow');
+  }
+
+  composeArgs.push('up', '--build');
+
+  // Use docker-compose.dev-server.yml for server-only development
+  // Run with piped stdio so we can still see output but also run Electron
+  processes.docker = crossSpawn('docker', composeArgs, {
+    stdio: 'inherit',
+    cwd: baseDir,
+    env: {
+      ...process.env,
+    },
+  });
+
+  log('Server container starting...', 'blue');
+  log('API will be available at: http://localhost:3008', 'green');
+  console.log('');
+
+  // Wait for the server to become healthy
+  log('Waiting for server to be ready...', 'yellow');
+  const serverPort = 3008;
+  const maxRetries = 120; // 2 minutes (first run may need npm install + build)
+  let serverReady = false;
+
+  for (let i = 0; i < maxRetries; i++) {
+    if (await checkHealth(serverPort)) {
+      serverReady = true;
+      break;
+    }
+    await sleep(1000);
+    // Show progress dots every 5 seconds
+    if (i > 0 && i % 5 === 0) {
+      process.stdout.write('.');
+    }
+  }
+
+  if (!serverReady) {
+    console.log('');
+    log('Error: Server container failed to become healthy', 'red');
+    log('Check the Docker logs above for errors', 'red');
+    return;
+  }
+
+  console.log('');
+  log('Server is ready! Launching Electron...', 'green');
+  console.log('');
+
+  // Build shared packages before launching Electron
+  log('Building shared packages...', 'blue');
+  try {
+    await runNpmAndWait(['run', 'build:packages'], { stdio: 'inherit' }, baseDir);
+  } catch (error) {
+    log('Failed to build packages: ' + error.message, 'red');
+    return;
+  }
+
+  // Launch Electron with SKIP_EMBEDDED_SERVER=true
+  // This tells Electron to connect to the external Docker server instead of starting its own
+  processes.electron = crossSpawn('npm', ['run', '_dev:electron'], {
+    stdio: 'inherit',
+    cwd: baseDir,
+    env: {
+      ...process.env,
+      SKIP_EMBEDDED_SERVER: 'true',
+      PORT: '3008',
+      VITE_SERVER_URL: 'http://localhost:3008',
+    },
+  });
+
+  log('Electron launched with SKIP_EMBEDDED_SERVER=true', 'green');
+  log('Changes to server source files will automatically reload.', 'yellow');
+  log('Press Ctrl+C to stop both Electron and the container.', 'yellow');
+  console.log('');
+
+  // Wait for either process to exit
+  await Promise.race([
+    new Promise((resolve) => processes.docker.on('close', resolve)),
+    new Promise((resolve) => processes.electron.on('close', resolve)),
+  ]);
 }
 
 /**

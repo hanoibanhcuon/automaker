@@ -27,6 +27,7 @@ import {
   ensureDependencies,
   prompt,
   launchDockerDevContainers,
+  launchDockerDevServerContainer,
 } from './scripts/launcher-utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -96,7 +97,7 @@ async function main() {
 
   // Prompt for choice
   while (true) {
-    const choice = await prompt('Enter your choice (1, 2, or 3): ');
+    const choice = await prompt('Enter your choice (1, 2, 3, or 4): ');
 
     if (choice === '1') {
       console.log('');
@@ -172,8 +173,12 @@ async function main() {
       console.log('');
       await launchDockerDevContainers({ baseDir: __dirname, processes });
       break;
+    } else if (choice === '4') {
+      console.log('');
+      await launchDockerDevServerContainer({ baseDir: __dirname, processes });
+      break;
     } else {
-      log('Invalid choice. Please enter 1, 2, or 3.', 'red');
+      log('Invalid choice. Please enter 1, 2, 3, or 4.', 'red');
     }
   }
 }

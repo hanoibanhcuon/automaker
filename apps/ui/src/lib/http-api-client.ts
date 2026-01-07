@@ -131,6 +131,39 @@ export const isElectronMode = (): boolean => {
   return api?.isElectron === true || !!api?.getApiKey;
 };
 
+// Cached external server mode flag
+let cachedExternalServerMode: boolean | null = null;
+
+/**
+ * Check if running in external server mode (Docker API)
+ * In this mode, Electron uses session-based auth like web mode
+ */
+export const checkExternalServerMode = async (): Promise<boolean> => {
+  if (cachedExternalServerMode !== null) {
+    return cachedExternalServerMode;
+  }
+
+  if (typeof window !== 'undefined') {
+    const api = window.electronAPI as any;
+    if (api?.isExternalServerMode) {
+      try {
+        cachedExternalServerMode = await api.isExternalServerMode();
+        return cachedExternalServerMode;
+      } catch (error) {
+        logger.warn('Failed to check external server mode:', error);
+      }
+    }
+  }
+
+  cachedExternalServerMode = false;
+  return false;
+};
+
+/**
+ * Get cached external server mode (synchronous, returns null if not yet checked)
+ */
+export const isExternalServerMode = (): boolean | null => cachedExternalServerMode;
+
 /**
  * Initialize API key and server URL for Electron mode authentication.
  * In web mode, authentication uses HTTP-only cookies instead.

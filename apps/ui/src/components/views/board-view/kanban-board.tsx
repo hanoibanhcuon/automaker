@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { DndContext, DragOverlay } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Button } from '@/components/ui/button';
-import { KanbanColumn, KanbanCard } from './components';
+import { KanbanColumn, KanbanCard, EmptyStateCard } from './components';
 import { Feature, useAppStore, formatShortcut } from '@/store/app-store';
 import { Archive, Settings2, CheckSquare, GripVertical, Plus } from 'lucide-react';
 import { useResponsiveKanban } from '@/hooks/use-responsive-kanban';
@@ -51,6 +51,12 @@ interface KanbanBoardProps {
   selectedFeatureIds?: Set<string>;
   onToggleFeatureSelection?: (featureId: string) => void;
   onToggleSelectionMode?: () => void;
+  // Empty state action props
+  onAiSuggest?: () => void;
+  /** Whether currently dragging (hides empty states during drag) */
+  isDragging?: boolean;
+  /** Whether the board is in read-only mode */
+  isReadOnly?: boolean;
 }
 
 export function KanbanBoard({
@@ -86,6 +92,9 @@ export function KanbanBoard({
   selectedFeatureIds = new Set(),
   onToggleFeatureSelection,
   onToggleSelectionMode,
+  onAiSuggest,
+  isDragging = false,
+  isReadOnly = false,
 }: KanbanBoardProps) {
   // Generate columns including pipeline steps
   const columns = useMemo(() => getColumnsWithPipeline(pipelineConfig), [pipelineConfig]);
@@ -211,6 +220,26 @@ export function KanbanBoard({
                   items={columnFeatures.map((f) => f.id)}
                   strategy={verticalListSortingStrategy}
                 >
+                  {/* Empty state card when column has no features */}
+                  {columnFeatures.length === 0 && !isDragging && (
+                    <EmptyStateCard
+                      columnId={column.id}
+                      columnTitle={column.title}
+                      addFeatureShortcut={addFeatureShortcut}
+                      isReadOnly={isReadOnly}
+                      onAiSuggest={column.id === 'backlog' ? onAiSuggest : undefined}
+                      opacity={backgroundSettings.cardOpacity}
+                      glassmorphism={backgroundSettings.cardGlassmorphism}
+                      customConfig={
+                        column.isPipelineStep
+                          ? {
+                              title: `${column.title} Empty`,
+                              description: `Features will appear here during the ${column.title.toLowerCase()} phase of the pipeline.`,
+                            }
+                          : undefined
+                      }
+                    />
+                  )}
                   {columnFeatures.map((feature, index) => {
                     // Calculate shortcut key for in-progress cards (first 10 get 1-9, 0)
                     let shortcutKey: string | undefined;

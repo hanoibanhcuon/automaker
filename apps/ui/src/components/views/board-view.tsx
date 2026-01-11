@@ -1287,6 +1287,8 @@ export function BoardView() {
           selectedFeatureIds={selectedFeatureIds}
           onToggleFeatureSelection={toggleFeatureSelection}
           onToggleSelectionMode={toggleSelectionMode}
+          isDragging={activeFeature !== null}
+          onAiSuggest={() => setShowPlanDialog(true)}
         />
       </div>
 

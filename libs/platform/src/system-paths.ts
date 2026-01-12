@@ -233,6 +233,27 @@ export function getClaudeProjectsDir(): string {
 }
 
 /**
+ * Enumerate directories matching a prefix pattern and return full paths
+ * Used to resolve dynamic directory names like version numbers
+ */
+function enumerateMatchingPaths(
+  parentDir: string,
+  prefix: string,
+  ...subPathParts: string[]
+): string[] {
+  try {
+    if (!fsSync.existsSync(parentDir)) {
+      return [];
+    }
+    const entries = fsSync.readdirSync(parentDir);
+    const matching = entries.filter((entry) => entry.startsWith(prefix));
+    return matching.map((entry) => path.join(parentDir, entry, ...subPathParts));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Get common Git Bash installation paths on Windows
  * Git Bash is needed for running shell scripts cross-platform
  */
@@ -242,12 +263,38 @@ export function getGitBashPaths(): string[] {
   }
 
   const homeDir = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || '';
+
+  // Dynamic paths that require directory enumeration
+  // winget installs to: LocalAppData\Microsoft\WinGet\Packages\Git.Git_<hash>\bin\bash.exe
+  const wingetGitPaths = localAppData
+    ? enumerateMatchingPaths(
+        path.join(localAppData, 'Microsoft', 'WinGet', 'Packages'),
+        'Git.Git_',
+        'bin',
+        'bash.exe'
+      )
+    : [];
+
+  // GitHub Desktop bundles Git at: LocalAppData\GitHubDesktop\app-<version>\resources\app\git\cmd\bash.exe
+  const githubDesktopPaths = localAppData
+    ? enumerateMatchingPaths(
+        path.join(localAppData, 'GitHubDesktop'),
+        'app-',
+        'resources',
+        'app',
+        'git',
+        'cmd',
+        'bash.exe'
+      )
+    : [];
+
   return [
     // Standard Git for Windows installations
     'C:\\Program Files\\Git\\bin\\bash.exe',
     'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
     // User-local installations
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin', 'bash.exe'),
+    path.join(localAppData, 'Programs', 'Git', 'bin', 'bash.exe'),
     // Scoop package manager
     path.join(homeDir, 'scoop', 'apps', 'git', 'current', 'bin', 'bash.exe'),
     // Chocolatey
@@ -259,27 +306,10 @@ export function getGitBashPaths(): string[] {
       'bin',
       'bash.exe'
     ),
-    // winget typical location
-    path.join(
-      process.env.LOCALAPPDATA || '',
-      'Microsoft',
-      'WinGet',
-      'Packages',
-      'Git.Git_*',
-      'bin',
-      'bash.exe'
-    ),
-    // GitHub Desktop bundled Git
-    path.join(
-      process.env.LOCALAPPDATA || '',
-      'GitHubDesktop',
-      'app-*',
-      'resources',
-      'app',
-      'git',
-      'cmd',
-      'bash.exe'
-    ),
+    // winget installations (dynamically resolved)
+    ...wingetGitPaths,
+    // GitHub Desktop bundled Git (dynamically resolved)
+    ...githubDesktopPaths,
   ].filter(Boolean);
 }
 

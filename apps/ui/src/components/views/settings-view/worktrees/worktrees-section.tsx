@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { apiGet, apiPut, apiDelete } from '@/lib/api-fetch';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/app-store';
+import { getHttpApiClient } from '@/lib/http-api-client';
 
 interface WorktreesSectionProps {
   useWorktrees: boolean;
@@ -217,9 +218,19 @@ export function WorktreesSection({ useWorktrees, onUseWorktreesChange }: Worktre
             <Checkbox
               id="show-init-script-indicator"
               checked={showIndicator}
-              onCheckedChange={(checked) => {
+              onCheckedChange={async (checked) => {
                 if (currentProject?.path) {
-                  setShowInitScriptIndicator(currentProject.path, checked === true);
+                  const value = checked === true;
+                  setShowInitScriptIndicator(currentProject.path, value);
+                  // Persist to server
+                  try {
+                    const httpClient = getHttpApiClient();
+                    await httpClient.settings.updateProject(currentProject.path, {
+                      showInitScriptIndicator: value,
+                    });
+                  } catch (error) {
+                    console.error('Failed to persist showInitScriptIndicator:', error);
+                  }
                 }
               }}
               className="mt-1"
@@ -246,9 +257,19 @@ export function WorktreesSection({ useWorktrees, onUseWorktreesChange }: Worktre
             <Checkbox
               id="auto-dismiss-indicator"
               checked={autoDismiss}
-              onCheckedChange={(checked) => {
+              onCheckedChange={async (checked) => {
                 if (currentProject?.path) {
-                  setAutoDismissInitScriptIndicator(currentProject.path, checked === true);
+                  const value = checked === true;
+                  setAutoDismissInitScriptIndicator(currentProject.path, value);
+                  // Persist to server
+                  try {
+                    const httpClient = getHttpApiClient();
+                    await httpClient.settings.updateProject(currentProject.path, {
+                      autoDismissInitScriptIndicator: value,
+                    });
+                  } catch (error) {
+                    console.error('Failed to persist autoDismissInitScriptIndicator:', error);
+                  }
                 }
               }}
               className="mt-1"
@@ -273,9 +294,19 @@ export function WorktreesSection({ useWorktrees, onUseWorktreesChange }: Worktre
             <Checkbox
               id="default-delete-branch"
               checked={defaultDeleteBranch}
-              onCheckedChange={(checked) => {
+              onCheckedChange={async (checked) => {
                 if (currentProject?.path) {
-                  setDefaultDeleteBranch(currentProject.path, checked === true);
+                  const value = checked === true;
+                  setDefaultDeleteBranch(currentProject.path, value);
+                  // Persist to server
+                  try {
+                    const httpClient = getHttpApiClient();
+                    await httpClient.settings.updateProject(currentProject.path, {
+                      defaultDeleteBranch: value,
+                    });
+                  } catch (error) {
+                    console.error('Failed to persist defaultDeleteBranch:', error);
+                  }
                 }
               }}
               className="mt-1"

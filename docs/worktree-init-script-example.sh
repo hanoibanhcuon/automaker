@@ -14,8 +14,12 @@ echo ""
 # Install dependencies
 echo "[1/1] Installing npm dependencies..."
 if [ -f "package.json" ]; then
-    npm install
-    echo "Dependencies installed successfully!"
+    if npm install; then
+        echo "Dependencies installed successfully!"
+    else
+        echo "ERROR: npm install failed with exit code $?"
+        exit 1
+    fi
 else
     echo "No package.json found, skipping npm install"
 fi

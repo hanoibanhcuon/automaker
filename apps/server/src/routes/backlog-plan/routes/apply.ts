@@ -12,11 +12,21 @@ const featureLoader = new FeatureLoader();
 export function createApplyHandler() {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath, plan, branchName } = req.body as {
+      const {
+        projectPath,
+        plan,
+        branchName: rawBranchName,
+      } = req.body as {
         projectPath: string;
         plan: BacklogPlanResult;
         branchName?: string;
       };
+
+      // Validate branchName: must be undefined or a non-empty trimmed string
+      const branchName =
+        typeof rawBranchName === 'string' && rawBranchName.trim().length > 0
+          ? rawBranchName.trim()
+          : undefined;
 
       if (!projectPath) {
         res.status(400).json({ success: false, error: 'projectPath required' });

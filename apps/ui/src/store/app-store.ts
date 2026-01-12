@@ -80,6 +80,9 @@ export type ThemeMode =
 // LocalStorage key for theme persistence (fallback when server settings aren't available)
 export const THEME_STORAGE_KEY = 'automaker:theme';
 
+// Maximum number of output lines to keep in init script state (prevents unbounded memory growth)
+export const MAX_INIT_OUTPUT_LINES = 500;
+
 /**
  * Get the theme from localStorage as a fallback
  * Used before server settings are loaded (e.g., on login/setup pages)
@@ -1823,16 +1826,28 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     await syncSettingsToServer();
   },
   setPlanUseSelectedWorktreeBranch: async (enabled) => {
+    const previous = get().planUseSelectedWorktreeBranch;
     set({ planUseSelectedWorktreeBranch: enabled });
     // Sync to server settings file
     const { syncSettingsToServer } = await import('@/hooks/use-settings-migration');
-    await syncSettingsToServer();
+    const ok = await syncSettingsToServer();
+    if (!ok) {
+      logger.error('Failed to sync planUseSelectedWorktreeBranch setting to server - reverting');
+      set({ planUseSelectedWorktreeBranch: previous });
+    }
   },
   setAddFeatureUseSelectedWorktreeBranch: async (enabled) => {
+    const previous = get().addFeatureUseSelectedWorktreeBranch;
     set({ addFeatureUseSelectedWorktreeBranch: enabled });
     // Sync to server settings file
     const { syncSettingsToServer } = await import('@/hooks/use-settings-migration');
-    await syncSettingsToServer();
+    const ok = await syncSettingsToServer();
+    if (!ok) {
+      logger.error(
+        'Failed to sync addFeatureUseSelectedWorktreeBranch setting to server - reverting'
+      );
+      set({ addFeatureUseSelectedWorktreeBranch: previous });
+    }
   },
 
   // Worktree Settings actions
@@ -3282,14 +3297,20 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   appendInitScriptOutput: (projectPath, branch, content) => {
     const key = `${projectPath}::${branch}`;
-    const current = get().initScriptState[key];
-    if (!current) return;
+    // Initialize state if absent to avoid dropping output due to event-order races
+    const current = get().initScriptState[key] || {
+      status: 'idle' as const,
+      branch,
+      output: [],
+    };
+    // Append new content and enforce fixed-size buffer to prevent memory bloat
+    const newOutput = [...current.output, content].slice(-MAX_INIT_OUTPUT_LINES);
     set({
       initScriptState: {
         ...get().initScriptState,
         [key]: {
           ...current,
-          output: [...current.output, content],
+          output: newOutput,
         },
       },
     });

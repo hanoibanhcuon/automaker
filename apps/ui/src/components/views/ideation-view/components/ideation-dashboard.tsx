@@ -4,10 +4,11 @@
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Loader2, AlertCircle, Plus, X, Sparkles, Lightbulb } from 'lucide-react';
+import { Loader2, AlertCircle, Plus, X, Sparkles, Lightbulb, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useIdeationStore, type GenerationJob } from '@/store/ideation-store';
 import { useAppStore } from '@/store/app-store';
 import { getElectronAPI } from '@/lib/electron';
@@ -15,9 +16,13 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { AnalysisSuggestion } from '@automaker/types';
 
+// Helper for consistent pluralization of "idea/ideas"
+const pluralizeIdea = (count: number) => `idea${count !== 1 ? 's' : ''}`;
+
 interface IdeationDashboardProps {
   onGenerateIdeas: () => void;
   onAcceptAllReady?: (isReady: boolean, count: number, handler: () => Promise<void>) => void;
+  onDiscardAllReady?: (isReady: boolean, count: number, handler: () => void) => void;
 }
 
 function SuggestionCard({
@@ -169,13 +174,18 @@ function TagFilter({
   );
 }
 
-export function IdeationDashboard({ onGenerateIdeas, onAcceptAllReady }: IdeationDashboardProps) {
+export function IdeationDashboard({
+  onGenerateIdeas,
+  onAcceptAllReady,
+  onDiscardAllReady,
+}: IdeationDashboardProps) {
   const currentProject = useAppStore((s) => s.currentProject);
   const generationJobs = useIdeationStore((s) => s.generationJobs);
   const removeSuggestionFromJob = useIdeationStore((s) => s.removeSuggestionFromJob);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [isAcceptingAll, setIsAcceptingAll] = useState(false);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   // Get jobs for current project only (memoized to prevent unnecessary re-renders)
   const projectJobs = useMemo(
@@ -304,23 +314,40 @@ export function IdeationDashboard({ onGenerateIdeas, onAcceptAllReady }: Ideatio
     setIsAcceptingAll(false);
 
     if (successCount > 0 && failCount === 0) {
-      toast.success(`Added ${successCount} idea${successCount > 1 ? 's' : ''} to board`);
+      toast.success(`Added ${successCount} ${pluralizeIdea(successCount)} to board`);
     } else if (successCount > 0 && failCount > 0) {
-      toast.warning(
-        `Added ${successCount} idea${successCount > 1 ? 's' : ''}, ${failCount} failed`
-      );
+      toast.warning(`Added ${successCount} ${pluralizeIdea(successCount)}, ${failCount} failed`);
     } else {
       toast.error('Failed to add ideas to board');
     }
   }, [currentProject?.path, filteredSuggestions, removeSuggestionFromJob]);
 
+  // Show discard confirmation dialog
+  const handleDiscardAll = useCallback(() => {
+    setShowDiscardConfirm(true);
+  }, []);
+
+  // Actually discard all filtered suggestions
+  const confirmDiscardAll = useCallback(() => {
+    const count = filteredSuggestions.length;
+    for (const { suggestion, job } of filteredSuggestions) {
+      removeSuggestionFromJob(job.id, suggestion.id);
+    }
+    toast.info(`Discarded ${count} ${pluralizeIdea(count)}`);
+  }, [filteredSuggestions, removeSuggestionFromJob]);
+
+  // Common readiness state for bulk operations
+  const bulkActionsReady = filteredSuggestions.length > 0 && !isAcceptingAll && !addingId;
+
   // Notify parent about accept all readiness
   useEffect(() => {
-    if (onAcceptAllReady) {
-      const isReady = filteredSuggestions.length > 0 && !isAcceptingAll && !addingId;
-      onAcceptAllReady(isReady, filteredSuggestions.length, handleAcceptAll);
-    }
-  }, [filteredSuggestions.length, isAcceptingAll, addingId, handleAcceptAll, onAcceptAllReady]);
+    onAcceptAllReady?.(bulkActionsReady, filteredSuggestions.length, handleAcceptAll);
+  }, [bulkActionsReady, filteredSuggestions.length, handleAcceptAll, onAcceptAllReady]);
+
+  // Notify parent about discard all readiness
+  useEffect(() => {
+    onDiscardAllReady?.(bulkActionsReady, filteredSuggestions.length, handleDiscardAll);
+  }, [bulkActionsReady, filteredSuggestions.length, handleDiscardAll, onDiscardAllReady]);
 
   const isEmpty = allSuggestions.length === 0 && activeJobs.length === 0;
 
@@ -331,10 +358,10 @@ export function IdeationDashboard({ onGenerateIdeas, onAcceptAllReady }: Ideatio
         {(generatingCount > 0 || allSuggestions.length > 0) && (
           <p className="text-sm text-muted-foreground">
             {generatingCount > 0
-              ? `Generating ${generatingCount} idea${generatingCount > 1 ? 's' : ''}...`
+              ? `Generating ${generatingCount} ${pluralizeIdea(generatingCount)}...`
               : selectedTags.size > 0
-                ? `Showing ${filteredSuggestions.length} of ${allSuggestions.length} ideas`
-                : `${allSuggestions.length} idea${allSuggestions.length > 1 ? 's' : ''} ready for review`}
+                ? `Showing ${filteredSuggestions.length} of ${allSuggestions.length} ${pluralizeIdea(allSuggestions.length)}`
+                : `${allSuggestions.length} ${pluralizeIdea(allSuggestions.length)} ready for review`}
           </p>
         )}
 
@@ -419,6 +446,19 @@ export function IdeationDashboard({ onGenerateIdeas, onAcceptAllReady }: Ideatio
           </Card>
         )}
       </div>
+
+      {/* Discard All Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        onConfirm={confirmDiscardAll}
+        title="Discard All Ideas"
+        description={`Are you sure you want to discard ${filteredSuggestions.length} ${pluralizeIdea(filteredSuggestions.length)}? This cannot be undone.`}
+        icon={Trash2}
+        iconClassName="text-destructive"
+        confirmText="Discard"
+        confirmVariant="destructive"
+      />
     </div>
   );
 }

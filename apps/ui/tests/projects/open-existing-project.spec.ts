@@ -85,7 +85,17 @@ test.describe('Open Project', () => {
     // AND inject our test project into the projects list
     await page.route('**/api/settings/global', async (route) => {
       const response = await route.fetch();
-      const json = await response.json();
+      // Immediately consume the body to prevent disposal issues
+      const bodyPromise = response.body();
+      const status = response.status();
+      const headers = response.headers();
+      const body = await bodyPromise;
+      let json;
+      try {
+        json = JSON.parse(body.toString());
+      } catch {
+        json = {};
+      }
       if (json.settings) {
         // Remove currentProjectId to prevent restoring a project
         json.settings.currentProjectId = null;
@@ -106,8 +116,8 @@ test.describe('Open Project', () => {
         }
       }
       await route.fulfill({
-        status: response.status(),
-        headers: response.headers(),
+        status: status,
+        headers: headers,
         json,
       });
     });

@@ -113,24 +113,37 @@ export function isRequestLoggingEnabled(): boolean {
   return requestLoggingEnabled;
 }
 
+// Width for log box content (excluding borders)
+const BOX_CONTENT_WIDTH = 67;
+
 // Check for required environment variables
 const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
 
 if (!hasAnthropicKey) {
+  const wHeader = '⚠️  WARNING: No Claude authentication configured'.padEnd(BOX_CONTENT_WIDTH);
+  const w1 = 'The Claude Agent SDK requires authentication to function.'.padEnd(BOX_CONTENT_WIDTH);
+  const w2 = 'Set your Anthropic API key:'.padEnd(BOX_CONTENT_WIDTH);
+  const w3 = '  export ANTHROPIC_API_KEY="sk-ant-..."'.padEnd(BOX_CONTENT_WIDTH);
+  const w4 = 'Or use the setup wizard in Settings to configure authentication.'.padEnd(
+    BOX_CONTENT_WIDTH
+  );
+
   logger.warn(`
-╔═══════════════════════════════════════════════════════════════════════╗
-║  ⚠️  WARNING: No Claude authentication configured                      ║
-║                                                                       ║
-║  The Claude Agent SDK requires authentication to function.            ║
-║                                                                       ║
-║  Set your Anthropic API key:                                          ║
-║    export ANTHROPIC_API_KEY="sk-ant-..."                              ║
-║                                                                       ║
-║  Or use the setup wizard in Settings to configure authentication.     ║
-╚═══════════════════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════════════════╗
+║  ${wHeader}║
+╠═════════════════════════════════════════════════════════════════════╣
+║                                                                     ║
+║  ${w1}║
+║                                                                     ║
+║  ${w2}║
+║  ${w3}║
+║                                                                     ║
+║  ${w4}║
+║                                                                     ║
+╚═════════════════════════════════════════════════════════════════════╝
 `);
 } else {
-  logger.info('✓ ANTHROPIC_API_KEY detected (API key auth)');
+  logger.info('✓ ANTHROPIC_API_KEY detected');
 }
 
 // Initialize security
@@ -649,40 +662,74 @@ const startServer = (port: number, host: string) => {
         ? 'enabled (password protected)'
         : 'enabled'
       : 'disabled';
-    const portStr = port.toString().padEnd(4);
+
+    // Build URLs for display
+    const listenAddr = `${host}:${port}`;
+    const httpUrl = `http://${HOSTNAME}:${port}`;
+    const wsEventsUrl = `ws://${HOSTNAME}:${port}/api/events`;
+    const wsTerminalUrl = `ws://${HOSTNAME}:${port}/api/terminal/ws`;
+    const healthUrl = `http://${HOSTNAME}:${port}/api/health`;
+
+    const sHeader = '🚀 Automaker Backend Server'.padEnd(BOX_CONTENT_WIDTH);
+    const s1 = `Listening:    ${listenAddr}`.padEnd(BOX_CONTENT_WIDTH);
+    const s2 = `HTTP API:     ${httpUrl}`.padEnd(BOX_CONTENT_WIDTH);
+    const s3 = `WebSocket:    ${wsEventsUrl}`.padEnd(BOX_CONTENT_WIDTH);
+    const s4 = `Terminal WS:  ${wsTerminalUrl}`.padEnd(BOX_CONTENT_WIDTH);
+    const s5 = `Health:       ${healthUrl}`.padEnd(BOX_CONTENT_WIDTH);
+    const s6 = `Terminal:     ${terminalStatus}`.padEnd(BOX_CONTENT_WIDTH);
+
     logger.info(`
-╔═══════════════════════════════════════════════════════╗
-║           Automaker Backend Server                    ║
-╠═══════════════════════════════════════════════════════╣
-║  Listening:   ${host}:${port}${' '.repeat(Math.max(0, 34 - host.length - port.toString().length))}║
-║  HTTP API:    http://${HOSTNAME}:${portStr}                 ║
-║  WebSocket:   ws://${HOSTNAME}:${portStr}/api/events        ║
-║  Terminal:    ws://${HOSTNAME}:${portStr}/api/terminal/ws   ║
-║  Health:      http://${HOSTNAME}:${portStr}/api/health      ║
-║  Terminal:    ${terminalStatus.padEnd(37)}║
-╚═══════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════════════════╗
+║  ${sHeader}║
+╠═════════════════════════════════════════════════════════════════════╣
+║                                                                     ║
+║  ${s1}║
+║  ${s2}║
+║  ${s3}║
+║  ${s4}║
+║  ${s5}║
+║  ${s6}║
+║                                                                     ║
+╚═════════════════════════════════════════════════════════════════════╝
 `);
   });
 
   server.on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
+      const portStr = port.toString();
+      const nextPortStr = (port + 1).toString();
+      const killCmd = `lsof -ti:${portStr} | xargs kill -9`;
+      const altCmd = `PORT=${nextPortStr} npm run dev:server`;
+
+      const eHeader = `❌ ERROR: Port ${portStr} is already in use`.padEnd(BOX_CONTENT_WIDTH);
+      const e1 = 'Another process is using this port.'.padEnd(BOX_CONTENT_WIDTH);
+      const e2 = 'To fix this, try one of:'.padEnd(BOX_CONTENT_WIDTH);
+      const e3 = '1. Kill the process using the port:'.padEnd(BOX_CONTENT_WIDTH);
+      const e4 = `   ${killCmd}`.padEnd(BOX_CONTENT_WIDTH);
+      const e5 = '2. Use a different port:'.padEnd(BOX_CONTENT_WIDTH);
+      const e6 = `   ${altCmd}`.padEnd(BOX_CONTENT_WIDTH);
+      const e7 = '3. Use the init.sh script which handles this:'.padEnd(BOX_CONTENT_WIDTH);
+      const e8 = '   ./init.sh'.padEnd(BOX_CONTENT_WIDTH);
+
       logger.error(`
-╔═══════════════════════════════════════════════════════╗
-║  ❌ ERROR: Port ${port} is already in use              ║
-╠═══════════════════════════════════════════════════════╣
-║  Another process is using this port.                  ║
-║                                                       ║
-║  To fix this, try one of:                             ║
-║                                                       ║
-║  1. Kill the process using the port:                  ║
-║     lsof -ti:${port} | xargs kill -9                   ║
-║                                                       ║
-║  2. Use a different port:                             ║
-║     PORT=${port + 1} npm run dev:server                ║
-║                                                       ║
-║  3. Use the init.sh script which handles this:        ║
-║     ./init.sh                                         ║
-╚═══════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════════════════╗
+║  ${eHeader}║
+╠═════════════════════════════════════════════════════════════════════╣
+║                                                                     ║
+║  ${e1}║
+║                                                                     ║
+║  ${e2}║
+║                                                                     ║
+║  ${e3}║
+║  ${e4}║
+║                                                                     ║
+║  ${e5}║
+║  ${e6}║
+║                                                                     ║
+║  ${e7}║
+║  ${e8}║
+║                                                                     ║
+╚═════════════════════════════════════════════════════════════════════╝
 `);
       process.exit(1);
     } else {

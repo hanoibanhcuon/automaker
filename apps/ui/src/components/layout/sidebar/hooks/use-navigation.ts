@@ -13,6 +13,7 @@ import {
   Network,
   Bell,
   Settings,
+  LifeBuoy,
 } from 'lucide-react';
 import type { NavSection, NavItem } from '../types';
 import type { KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
@@ -36,6 +37,7 @@ interface UseNavigationProps {
     settings: string;
     projectSettings: string;
     ideation: string;
+    recovery: string;
     githubIssues: string;
     githubPrs: string;
     notifications: string;
@@ -127,6 +129,12 @@ export function useNavigation({
         label: 'Memory',
         icon: Brain,
         shortcut: shortcuts.memory,
+      },
+      {
+        id: 'recovery',
+        label: 'Recovery Center',
+        icon: LifeBuoy,
+        shortcut: shortcuts.recovery,
       },
     ];
 

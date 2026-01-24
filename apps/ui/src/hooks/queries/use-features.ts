@@ -12,6 +12,14 @@ import { queryKeys } from '@/lib/query-keys';
 import { STALE_TIMES } from '@/lib/query-client';
 import type { Feature } from '@/store/app-store';
 
+export interface FeatureTimelineEntry {
+  id: string;
+  type: 'feature_started' | 'plan_generated' | 'plan_approved' | 'task_started' | 'task_completed';
+  title: string;
+  detail?: string;
+  timestamp: string;
+}
+
 const FEATURES_REFETCH_ON_FOCUS = false;
 const FEATURES_REFETCH_ON_RECONNECT = false;
 
@@ -130,6 +138,93 @@ export function useAgentOutput(
             }
             return false;
           },
+    refetchOnWindowFocus: FEATURES_REFETCH_ON_FOCUS,
+    refetchOnReconnect: FEATURES_REFETCH_ON_RECONNECT,
+  });
+}
+
+export interface RecoveryCenterItem {
+  featureId: string;
+  title?: string;
+  status?: string;
+  updatedAt?: string;
+  providerId?: string;
+  model?: string;
+  planningMode?: string;
+  error?: string;
+  plan: {
+    tasksCompleted: number;
+    tasksTotal: number;
+    currentTaskId?: string;
+    status?: string;
+  } | null;
+  missingFiles: string[];
+  hasAgentOutput: boolean;
+  issues: string[];
+  canResume: boolean;
+  canRebuild: boolean;
+}
+
+export interface RecoveryCenterSummary {
+  total: number;
+  incompletePlans: number;
+  missingFiles: number;
+  missingOutputs: number;
+}
+
+interface UseTimelineOptions {
+  enabled?: boolean;
+  pollingInterval?: number | false;
+}
+
+export function useFeatureTimeline(
+  projectPath: string | undefined,
+  featureId: string | undefined,
+  options: UseTimelineOptions = {}
+) {
+  const { enabled = true, pollingInterval } = options;
+
+  return useQuery({
+    queryKey: queryKeys.features.timeline(projectPath ?? '', featureId ?? ''),
+    queryFn: async (): Promise<FeatureTimelineEntry[]> => {
+      if (!projectPath || !featureId) throw new Error('Missing project path or feature ID');
+      const api = getElectronAPI();
+      const result = await api.features?.getTimeline?.(projectPath, featureId);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to fetch timeline');
+      }
+      return result.timeline ?? [];
+    },
+    enabled: !!projectPath && !!featureId && enabled,
+    staleTime: STALE_TIMES.FEATURES,
+    refetchInterval: pollingInterval ?? false,
+    refetchOnWindowFocus: FEATURES_REFETCH_ON_FOCUS,
+    refetchOnReconnect: FEATURES_REFETCH_ON_RECONNECT,
+  });
+}
+
+export function useRecoveryCenter(projectPath: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.features.recovery(projectPath ?? ''),
+    queryFn: async (): Promise<{ summary: RecoveryCenterSummary; items: RecoveryCenterItem[] }> => {
+      if (!projectPath) throw new Error('No project path');
+      const api = getElectronAPI();
+      const result = await api.features?.recoveryCenter?.(projectPath);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to fetch recovery center');
+      }
+      return {
+        summary: result.summary || {
+          total: 0,
+          incompletePlans: 0,
+          missingFiles: 0,
+          missingOutputs: 0,
+        },
+        items: result.items || [],
+      };
+    },
+    enabled: !!projectPath,
+    staleTime: STALE_TIMES.FEATURES,
     refetchOnWindowFocus: FEATURES_REFETCH_ON_FOCUS,
     refetchOnReconnect: FEATURES_REFETCH_ON_RECONNECT,
   });

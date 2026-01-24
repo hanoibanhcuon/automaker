@@ -28,6 +28,11 @@ export const queryKeys = {
     /** Agent output for a feature */
     agentOutput: (projectPath: string, featureId: string) =>
       ['features', projectPath, featureId, 'output'] as const,
+    /** Timeline for a feature */
+    timeline: (projectPath: string, featureId: string) =>
+      ['features', projectPath, featureId, 'timeline'] as const,
+    /** Recovery center data for a project */
+    recovery: (projectPath: string) => ['features', projectPath, 'recovery'] as const,
   },
 
   // ============================================

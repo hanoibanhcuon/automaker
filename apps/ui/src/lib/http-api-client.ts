@@ -1657,6 +1657,24 @@ export class HttpApiClient implements ElectronAPI {
       this.post('/api/features/delete', { projectPath, featureId }),
     getAgentOutput: (projectPath: string, featureId: string) =>
       this.post('/api/features/agent-output', { projectPath, featureId }),
+    reconcilePlan: (
+      projectPath: string,
+      featureId: string,
+      options?: { rebuildOutput?: boolean }
+    ) =>
+      this.post('/api/features/reconcile-plan', {
+        projectPath,
+        featureId,
+        ...options,
+      }),
+    rebuildOutput: (projectPath: string, featureId: string) =>
+      this.post('/api/features/rebuild-output', { projectPath, featureId }),
+    resumePending: (projectPath: string, featureId: string, useWorktrees?: boolean) =>
+      this.post('/api/features/resume-pending', { projectPath, featureId, useWorktrees }),
+    recoveryCenter: (projectPath: string) =>
+      this.post('/api/features/recovery-center', { projectPath }),
+    getTimeline: (projectPath: string, featureId: string) =>
+      this.post('/api/features/timeline', { projectPath, featureId }),
     generateTitle: (description: string, projectPath?: string) =>
       this.post('/api/features/generate-title', { description, projectPath }),
     bulkUpdate: (projectPath: string, featureIds: string[], updates: Partial<Feature>) =>

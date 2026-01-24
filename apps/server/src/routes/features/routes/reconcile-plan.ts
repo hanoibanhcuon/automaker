@@ -1,19 +1,21 @@
 /**
- * POST /get endpoint - Get a single feature
+ * POST /reconcile-plan endpoint - reconcile planSpec tasks with filesystem
  */
 
 import type { Request, Response } from 'express';
-import { FeatureLoader } from '../../../services/feature-loader.js';
 import type { Feature } from '@automaker/types';
+import { FeatureLoader } from '../../../services/feature-loader.js';
 import { getErrorMessage, logError } from '../common.js';
 import { reconcileFeaturePlanSpec, hasPlanSpecChanges } from '../utils/plan-reconcile.js';
+import { saveRebuiltOutput } from '../utils/rebuild-output-utils.js';
 
-export function createGetHandler(featureLoader: FeatureLoader) {
+export function createReconcilePlanHandler(featureLoader: FeatureLoader) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath, featureId } = req.body as {
+      const { projectPath, featureId, rebuildOutput } = req.body as {
         projectPath: string;
         featureId: string;
+        rebuildOutput?: boolean;
       };
 
       if (!projectPath || !featureId) {
@@ -32,7 +34,11 @@ export function createGetHandler(featureLoader: FeatureLoader) {
 
       const reconciled = await reconcileFeaturePlanSpec(projectPath, feature);
       if (!reconciled) {
-        res.json({ success: true, feature });
+        if (rebuildOutput !== false) {
+          const planTasks = (feature.planSpec as any)?.tasks;
+          await saveRebuiltOutput(projectPath, featureLoader, feature, planTasks, []);
+        }
+        res.json({ success: true, feature, reconciled: null });
         return;
       }
 
@@ -46,7 +52,16 @@ export function createGetHandler(featureLoader: FeatureLoader) {
           feature.status === 'completed');
 
       if (!needsUpdate && !shouldDowngradeStatus) {
-        res.json({ success: true, feature });
+        if (rebuildOutput !== false) {
+          await saveRebuiltOutput(
+            projectPath,
+            featureLoader,
+            feature,
+            reconciled.tasks,
+            reconciled.missingFiles
+          );
+        }
+        res.json({ success: true, feature, reconciled });
         return;
       }
 
@@ -68,9 +83,22 @@ export function createGetHandler(featureLoader: FeatureLoader) {
       }
 
       const updatedFeature = await featureLoader.update(projectPath, featureId, updates);
-      res.json({ success: true, feature: updatedFeature });
+      if (rebuildOutput !== false) {
+        await saveRebuiltOutput(
+          projectPath,
+          featureLoader,
+          updatedFeature,
+          reconciled.tasks,
+          reconciled.missingFiles
+        );
+      }
+      res.json({
+        success: true,
+        feature: updatedFeature,
+        reconciled: { ...reconciled, statusAdjusted: shouldDowngradeStatus },
+      });
     } catch (error) {
-      logError(error, 'Get feature failed');
+      logError(error, 'Reconcile plan failed');
       res.status(500).json({ success: false, error: getErrorMessage(error) });
     }
   };

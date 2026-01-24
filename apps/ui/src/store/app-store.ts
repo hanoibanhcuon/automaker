@@ -71,7 +71,8 @@ export type ViewMode =
   | 'running-agents'
   | 'terminal'
   | 'wiki'
-  | 'ideation';
+  | 'ideation'
+  | 'recovery';
 
 export type ThemeMode =
   // Special modes
@@ -327,6 +328,7 @@ export interface KeyboardShortcuts {
   spec: string;
   context: string;
   memory: string;
+  recovery: string;
   settings: string;
   projectSettings: string;
   terminal: string;
@@ -364,6 +366,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   spec: 'D',
   context: 'C',
   memory: 'Y',
+  recovery: 'Shift+R',
   settings: 'S',
   projectSettings: 'Shift+S',
   terminal: 'T',
@@ -468,6 +471,8 @@ export interface ParsedTask {
   filePath?: string; // e.g., "src/models/user.ts"
   phase?: string; // e.g., "Phase 1: Foundation" (for full mode)
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  startedAt?: string;
+  completedAt?: string;
 }
 
 // PlanSpec status for feature planning/specification

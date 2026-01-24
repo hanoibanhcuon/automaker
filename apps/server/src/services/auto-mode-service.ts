@@ -99,6 +99,8 @@ interface ParsedTask {
   filePath?: string; // e.g., "src/models/user.ts"
   phase?: string; // e.g., "Phase 1: Foundation" (for full mode)
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  startedAt?: string;
+  completedAt?: string;
 }
 
 interface PlanSpec {
@@ -1303,11 +1305,30 @@ export class AutoModeService {
       // Determine final status based on testing mode:
       // - skipTests=false (automated testing): go directly to 'verified' (no manual verify needed)
       // - skipTests=true (manual verification): go to 'waiting_approval' for manual review
-      const finalStatus = feature.skipTests ? 'waiting_approval' : 'verified';
+      let finalStatus = feature.skipTests ? 'waiting_approval' : 'verified';
+      let completionMessageSuffix = '';
+      let passes = true;
+
+      const latestFeature = await this.loadFeature(projectPath, featureId);
+      const reconciledPlan = await this.reconcilePlanSpecWithFilesystem(
+        projectPath,
+        featureId,
+        latestFeature?.planSpec ?? feature.planSpec
+      );
+      if (reconciledPlan) {
+        await this.updateFeaturePlanSpec(projectPath, featureId, reconciledPlan);
+        if (reconciledPlan.tasksCompleted < reconciledPlan.tasksTotal) {
+          finalStatus = 'backlog';
+          passes = false;
+          completionMessageSuffix = ` - plan incomplete (${reconciledPlan.tasksCompleted}/${reconciledPlan.tasksTotal})`;
+        }
+      }
       await this.updateFeatureStatus(projectPath, featureId, finalStatus);
 
       // Record success to reset consecutive failure tracking
-      this.recordSuccess();
+      if (passes) {
+        this.recordSuccess();
+      }
 
       // Record learnings and memory usage after successful feature completion
       try {
@@ -1343,10 +1364,10 @@ export class AutoModeService {
         featureId,
         featureName: feature.title,
         branchName: feature.branchName ?? null,
-        passes: true,
+        passes,
         message: `Feature completed in ${Math.round(
           (Date.now() - tempRunningFeature.startTime) / 1000
-        )}s${finalStatus === 'verified' ? ' - auto-verified' : ''}`,
+        )}s${finalStatus === 'verified' ? ' - auto-verified' : ''}${completionMessageSuffix}`,
         projectPath,
         model: tempRunningFeature.model,
         provider: tempRunningFeature.provider,
@@ -2921,6 +2942,60 @@ Format your response as a structured markdown document.`;
     return isCompleted;
   }
 
+  private async reconcilePlanSpecWithFilesystem(
+    projectPath: string,
+    featureId: string,
+    planSpec?: PlanSpec
+  ): Promise<{
+    tasks: ParsedTask[];
+    tasksCompleted: number;
+    tasksTotal: number;
+    currentTaskId?: string;
+  } | null> {
+    if (!planSpec?.tasks || planSpec.tasks.length === 0) {
+      return null;
+    }
+
+    const reconciledTasks = planSpec.tasks.map((task) => ({ ...task }));
+
+    for (const task of reconciledTasks) {
+      if (!task.filePath) {
+        task.status = task.status || 'pending';
+        continue;
+      }
+
+      const resolvedPath = path.isAbsolute(task.filePath)
+        ? task.filePath
+        : path.join(projectPath, task.filePath);
+
+      try {
+        await secureFs.access(resolvedPath);
+        task.status = 'completed';
+      } catch {
+        if (task.status === 'completed') {
+          task.status = 'pending';
+        } else {
+          task.status = task.status || 'pending';
+        }
+      }
+    }
+
+    const tasksCompleted = reconciledTasks.filter((task) => task.status === 'completed').length;
+    const tasksTotal = reconciledTasks.length;
+    const nextPending = reconciledTasks.find((task) => task.status !== 'completed');
+
+    logger.info(
+      `[AutoMode] Reconciled plan tasks for ${featureId}: ${tasksCompleted}/${tasksTotal} completed`
+    );
+
+    return {
+      tasks: reconciledTasks,
+      tasksCompleted,
+      tasksTotal,
+      currentTaskId: nextPending?.id,
+    };
+  }
+
   /**
    * Update the planSpec of a feature
    */
@@ -3929,8 +4004,15 @@ After generating the revised spec, output:
                     });
 
                     // Update planSpec with current task
+                    if (parsedTasks[taskIndex]) {
+                      parsedTasks[taskIndex].status = 'in_progress';
+                      if (!parsedTasks[taskIndex].startedAt) {
+                        parsedTasks[taskIndex].startedAt = new Date().toISOString();
+                      }
+                    }
                     await this.updateFeaturePlanSpec(projectPath, featureId, {
                       currentTaskId: task.id,
+                      tasks: parsedTasks,
                     });
 
                     // Build focused prompt for this specific task
@@ -3999,8 +4081,18 @@ After generating the revised spec, output:
                     });
 
                     // Update planSpec with progress
+                    if (parsedTasks[taskIndex]) {
+                      parsedTasks[taskIndex].status = 'completed';
+                      parsedTasks[taskIndex].completedAt = new Date().toISOString();
+                    }
+                    const completedCount = parsedTasks.filter(
+                      (t) => t.status === 'completed'
+                    ).length;
+                    const nextTaskId = parsedTasks[taskIndex + 1]?.id;
                     await this.updateFeaturePlanSpec(projectPath, featureId, {
-                      tasksCompleted: taskIndex + 1,
+                      tasksCompleted: completedCount,
+                      currentTaskId: nextTaskId,
+                      tasks: parsedTasks,
                     });
 
                     // Check for phase completion (group tasks by phase)

@@ -60,19 +60,23 @@ export function TaskProgressPanel({
         const currentId = planSpec.currentTaskId;
         const completedCount = planSpec.tasksCompleted || 0;
 
-        // Convert planSpec tasks to TaskInfo with proper status
-        const initialTasks: TaskInfo[] = planTasks.map((t: any, index: number) => ({
-          id: t.id,
-          description: t.description,
-          filePath: t.filePath,
-          phase: t.phase,
-          status:
+        // Convert planSpec tasks to TaskInfo with proper status (prefer explicit status)
+        const initialTasks: TaskInfo[] = planTasks.map((t: any, index: number) => {
+          const fallbackStatus =
             index < completedCount
               ? ('completed' as const)
               : t.id === currentId
                 ? ('in_progress' as const)
-                : ('pending' as const),
-        }));
+                : ('pending' as const);
+
+          return {
+            id: t.id,
+            description: t.description,
+            filePath: t.filePath,
+            phase: t.phase,
+            status: t.status || fallbackStatus,
+          };
+        });
 
         setTasks(initialTasks);
         setCurrentTaskId(currentId || null);

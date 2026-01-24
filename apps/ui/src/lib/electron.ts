@@ -479,6 +479,85 @@ export interface FeaturesAPI {
     projectPath: string,
     featureId: string
   ) => Promise<{ success: boolean; content?: string | null; error?: string }>;
+  reconcilePlan: (
+    projectPath: string,
+    featureId: string,
+    options?: { rebuildOutput?: boolean }
+  ) => Promise<{
+    success: boolean;
+    feature?: Feature;
+    reconciled?: {
+      tasksCompleted: number;
+      tasksTotal: number;
+      currentTaskId?: string;
+      missingFiles: string[];
+      statusAdjusted?: boolean;
+    } | null;
+    error?: string;
+  }>;
+  rebuildOutput: (
+    projectPath: string,
+    featureId: string
+  ) => Promise<{ success: boolean; content?: string; missingFiles?: string[]; error?: string }>;
+  resumePending: (
+    projectPath: string,
+    featureId: string,
+    useWorktrees?: boolean
+  ) => Promise<{
+    success: boolean;
+    reconciled?: {
+      tasksCompleted: number;
+      tasksTotal: number;
+      currentTaskId?: string;
+      missingFiles: string[];
+    };
+    error?: string;
+  }>;
+  recoveryCenter: (projectPath: string) => Promise<{
+    success: boolean;
+    summary?: {
+      total: number;
+      incompletePlans: number;
+      missingFiles: number;
+      missingOutputs: number;
+    };
+    items?: Array<{
+      featureId: string;
+      title?: string;
+      status?: string;
+      updatedAt?: string;
+      providerId?: string;
+      model?: string;
+      planningMode?: string;
+      error?: string;
+      plan: {
+        tasksCompleted: number;
+        tasksTotal: number;
+        currentTaskId?: string;
+        status?: string;
+      } | null;
+      missingFiles: string[];
+      hasAgentOutput: boolean;
+      issues: string[];
+      canResume: boolean;
+      canRebuild: boolean;
+    }>;
+    error?: string;
+  }>;
+  getTimeline: (
+    projectPath: string,
+    featureId: string
+  ) => Promise<{
+    success: boolean;
+    timeline?: Array<{
+      id: string;
+      type: string;
+      title: string;
+      detail?: string;
+      timestamp: string;
+    }>;
+    error?: string;
+  }>;
   generateTitle: (
     description: string,
     projectPath?: string
@@ -3221,6 +3300,80 @@ function createMockFeaturesAPI(): FeaturesAPI {
       const agentOutputPath = `${projectPath}/.automaker/features/${featureId}/agent-output.md`;
       const content = mockFileSystem[agentOutputPath];
       return { success: true, content: content || null };
+    },
+
+    reconcilePlan: async (
+      projectPath: string,
+      featureId: string,
+      _options?: { rebuildOutput?: boolean }
+    ) => {
+      console.log('[Mock] Reconciling plan:', { projectPath, featureId });
+      const featurePath = `${projectPath}/.automaker/features/${featureId}/feature.json`;
+      const existing = mockFileSystem[featurePath];
+      if (!existing) {
+        return { success: false, error: 'Feature not found' };
+      }
+      const feature = JSON.parse(existing);
+      return {
+        success: true,
+        feature,
+        reconciled: {
+          tasksCompleted: feature?.planSpec?.tasksCompleted || 0,
+          tasksTotal: feature?.planSpec?.tasksTotal || 0,
+          currentTaskId: feature?.planSpec?.currentTaskId,
+          missingFiles: [],
+          statusAdjusted: false,
+        },
+      };
+    },
+
+    rebuildOutput: async (projectPath: string, featureId: string) => {
+      console.log('[Mock] Rebuilding output:', { projectPath, featureId });
+      const agentOutputPath = `${projectPath}/.automaker/features/${featureId}/agent-output.md`;
+      const content = '# Rebuilt Output\n\nMock output rebuild.';
+      mockFileSystem[agentOutputPath] = content;
+      return { success: true, content, missingFiles: [] };
+    },
+
+    resumePending: async (projectPath: string, featureId: string, _useWorktrees?: boolean) => {
+      console.log('[Mock] Resume pending tasks:', { projectPath, featureId });
+      return {
+        success: true,
+        reconciled: {
+          tasksCompleted: 0,
+          tasksTotal: 0,
+          missingFiles: [],
+        },
+      };
+    },
+
+    recoveryCenter: async (projectPath: string) => {
+      console.log('[Mock] Recovery center:', { projectPath });
+      return {
+        success: true,
+        summary: {
+          total: 0,
+          incompletePlans: 0,
+          missingFiles: 0,
+          missingOutputs: 0,
+        },
+        items: [],
+      };
+    },
+
+    getTimeline: async (_projectPath: string, _featureId: string) => {
+      console.log('[Mock] Getting timeline');
+      return {
+        success: true,
+        timeline: [
+          {
+            id: 'mock-timeline-1',
+            type: 'feature_started',
+            title: 'Feature started',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
     },
 
     generateTitle: async (description: string, _projectPath?: string) => {

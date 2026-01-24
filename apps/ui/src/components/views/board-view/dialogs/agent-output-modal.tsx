@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { List, FileText, GitBranch, ClipboardList } from 'lucide-react';
+import {
+  List,
+  FileText,
+  GitBranch,
+  ClipboardList,
+  History,
+  RefreshCw,
+  RotateCcw,
+  Play,
+} from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { getElectronAPI } from '@/lib/electron';
 import { LogViewer } from '@/components/ui/log-viewer';
@@ -15,7 +24,9 @@ import { TaskProgressPanel } from '@/components/ui/task-progress-panel';
 import { Markdown } from '@/components/ui/markdown';
 import { useAppStore } from '@/store/app-store';
 import { extractSummary } from '@/lib/log-parser';
-import { useAgentOutput } from '@/hooks/queries';
+import { useAgentOutput, useFeatureTimeline } from '@/hooks/queries';
+import { Button } from '@/components/ui/button';
+import { useQueryClient } from '@tanstack/react-query';
 import type { AutoModeEvent } from '@/types/electron';
 
 interface AgentOutputModalProps {
@@ -33,7 +44,7 @@ interface AgentOutputModalProps {
   branchName?: string;
 }
 
-type ViewMode = 'summary' | 'parsed' | 'raw' | 'changes';
+type ViewMode = 'summary' | 'parsed' | 'raw' | 'changes' | 'timeline';
 
 export function AgentOutputModal({
   open,
@@ -53,13 +64,36 @@ export function AgentOutputModal({
   // Track additional content from WebSocket events (appended to query data)
   const [streamedContent, setStreamedContent] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode | null>(null);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+  const [reconcileInfo, setReconcileInfo] = useState<{
+    tasksCompleted: number;
+    tasksTotal: number;
+    currentTaskId?: string;
+    missingFiles: string[];
+    statusAdjusted?: boolean;
+  } | null>(null);
+  const lastAutoReconcileRef = useRef<string>('');
+  const useWorktrees = useAppStore((state) => state.useWorktrees);
+  const queryClient = useQueryClient();
 
   // Use React Query for initial output loading
-  const { data: initialOutput = '', isLoading } = useAgentOutput(
-    resolvedProjectPath,
-    featureId,
-    open && !!resolvedProjectPath
-  );
+  const { data: initialOutput = '', isLoading } = useAgentOutput(resolvedProjectPath, featureId, {
+    enabled: open && !!resolvedProjectPath,
+  });
+
+  useEffect(() => {
+    setReconcileInfo(null);
+    lastAutoReconcileRef.current = '';
+  }, [featureId, resolvedProjectPath]);
+
+  useEffect(() => {
+    if (!open) {
+      setReconcileInfo(null);
+      lastAutoReconcileRef.current = '';
+    }
+  }, [open]);
 
   // Reset streamed content when modal opens or featureId changes
   useEffect(() => {
@@ -67,6 +101,98 @@ export function AgentOutputModal({
       setStreamedContent('');
     }
   }, [open, featureId]);
+
+  const handleReconcile = useCallback(
+    async (source: 'auto' | 'manual' = 'manual') => {
+      if (!resolvedProjectPath || !featureId || isBacklogPlan) return;
+      if (isReconciling) return;
+
+      try {
+        setIsReconciling(true);
+        const api = getElectronAPI();
+        const result = await api.features?.reconcilePlan?.(resolvedProjectPath, featureId, {
+          rebuildOutput: true,
+        });
+        if (result?.success) {
+          setReconcileInfo(result.reconciled || null);
+          await queryClient.invalidateQueries({
+            queryKey: ['features', resolvedProjectPath],
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ['features', resolvedProjectPath, featureId],
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ['features', resolvedProjectPath, featureId, 'output'],
+          });
+          if (source === 'manual') {
+            await queryClient.invalidateQueries({
+              queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
+            });
+          }
+        }
+      } finally {
+        setIsReconciling(false);
+      }
+    },
+    [resolvedProjectPath, featureId, isBacklogPlan, isReconciling, queryClient]
+  );
+
+  const handleRebuildOutput = useCallback(async () => {
+    if (!resolvedProjectPath || !featureId || isBacklogPlan) return;
+    if (isRebuilding) return;
+    try {
+      setIsRebuilding(true);
+      const api = getElectronAPI();
+      const result = await api.features?.rebuildOutput?.(resolvedProjectPath, featureId);
+      if (result?.success) {
+        await handleReconcile('auto');
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'output'],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
+        });
+      }
+    } finally {
+      setIsRebuilding(false);
+    }
+  }, [resolvedProjectPath, featureId, isBacklogPlan, isRebuilding, queryClient]);
+
+  const handleResumePending = useCallback(async () => {
+    if (!resolvedProjectPath || !featureId || isBacklogPlan) return;
+    if (isResuming) return;
+    try {
+      setIsResuming(true);
+      const api = getElectronAPI();
+      const result = await api.features?.resumePending?.(
+        resolvedProjectPath,
+        featureId,
+        useWorktrees
+      );
+      if (result?.success) {
+        await handleReconcile('auto');
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'output'],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
+        });
+      }
+    } finally {
+      setIsResuming(false);
+    }
+  }, [resolvedProjectPath, featureId, isBacklogPlan, isResuming, useWorktrees, queryClient]);
+
+  useEffect(() => {
+    if (!open || !resolvedProjectPath || !featureId || isBacklogPlan) return;
+    const key = `${resolvedProjectPath}:${featureId}`;
+    if (lastAutoReconcileRef.current === key) return;
+    lastAutoReconcileRef.current = key;
+    handleReconcile('auto');
+  }, [open, resolvedProjectPath, featureId, isBacklogPlan, handleReconcile]);
 
   // Combine initial output from query with streamed content from WebSocket
   const output = initialOutput + streamedContent;
@@ -78,7 +204,15 @@ export function AgentOutputModal({
   const effectiveViewMode = viewMode ?? (summary ? 'summary' : 'parsed');
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
-  const useWorktrees = useAppStore((state) => state.useWorktrees);
+
+  const { data: timelineEntries = [], isLoading: isTimelineLoading } = useFeatureTimeline(
+    resolvedProjectPath,
+    featureId,
+    {
+      enabled: open && effectiveViewMode === 'timeline' && !!resolvedProjectPath && !isBacklogPlan,
+      pollingInterval: false,
+    }
+  );
 
   // Auto-scroll to bottom when output changes
   useEffect(() => {
@@ -282,7 +416,7 @@ export function AgentOutputModal({
       }
 
       if (newContent) {
-        setOutput((prev) => `${prev}${newContent}`);
+        setStreamedContent((prev) => prev + newContent);
       }
     });
 
@@ -383,6 +517,20 @@ export function AgentOutputModal({
                 <FileText className="w-3.5 h-3.5" />
                 Raw
               </button>
+              {!isBacklogPlan && (
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                    effectiveViewMode === 'timeline'
+                      ? 'bg-primary/20 text-primary shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                  data-testid="view-mode-timeline"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  Timeline
+                </button>
+              )}
             </div>
           </div>
           <DialogDescription
@@ -400,6 +548,73 @@ export function AgentOutputModal({
             projectPath={resolvedProjectPath}
             className="shrink-0 mx-3 my-2"
           />
+        )}
+
+        {!isBacklogPlan && (
+          <div className="mx-3 mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground min-w-0">
+              {reconcileInfo ? (
+                <>
+                  <span className="truncate">
+                    Plan health: {reconcileInfo.tasksCompleted}/{reconcileInfo.tasksTotal} completed
+                  </span>
+                  {reconcileInfo.missingFiles.length > 0 && (
+                    <span className="text-amber-500">
+                      Missing files: {reconcileInfo.missingFiles.length}
+                    </span>
+                  )}
+                  {reconcileInfo.statusAdjusted && (
+                    <span className="text-amber-500">Moved back to backlog</span>
+                  )}
+                </>
+              ) : (
+                <span className="truncate">Plan health: not available</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => handleReconcile('manual')}
+                disabled={isReconciling}
+                data-testid="reconcile-plan"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isReconciling ? 'animate-spin' : ''}`} />
+                Reconcile
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={handleRebuildOutput}
+                disabled={isRebuilding}
+                data-testid="rebuild-output"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 mr-1 ${isRebuilding ? 'animate-spin' : ''}`} />
+                Rebuild Output
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={handleResumePending}
+                disabled={
+                  isResuming ||
+                  !reconcileInfo ||
+                  reconcileInfo.tasksTotal === 0 ||
+                  reconcileInfo.tasksCompleted >= reconcileInfo.tasksTotal
+                }
+                data-testid="resume-pending"
+              >
+                <Play className="w-3.5 h-3.5 mr-1" />
+                Resume Pending Tasks
+              </Button>
+            </div>
+          </div>
         )}
 
         {effectiveViewMode === 'changes' ? (
@@ -422,6 +637,40 @@ export function AgentOutputModal({
         ) : effectiveViewMode === 'summary' && summary ? (
           <div className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
             <Markdown>{summary}</Markdown>
+          </div>
+        ) : effectiveViewMode === 'timeline' ? (
+          <div className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
+            {isTimelineLoading ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <Spinner size="lg" className="mr-2" />
+                Loading timeline...
+              </div>
+            ) : timelineEntries.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No timeline entries available.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {timelineEntries.map((entry) => (
+                  <div key={entry.id} className="flex gap-3">
+                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/60 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{entry.title}</span>
+                        <span className="whitespace-nowrap">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      {entry.detail && (
+                        <div className="text-xs text-muted-foreground break-words mt-1">
+                          {entry.detail}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <>

@@ -155,7 +155,7 @@ function getPrimaryAction(
   if (feature.status === 'in_progress' && handlers.onResume) {
     return {
       icon: RotateCcw,
-      label: 'Resume',
+      label: 'Resume Pending',
       onClick: handlers.onResume,
       variant: 'success',
     };
@@ -221,7 +221,7 @@ function getSecondaryActions(
  *
  * Actions by status:
  * - Backlog: Edit, Delete, Make (implement), View Plan, Spawn Sub-Task
- * - In Progress: View Logs, Resume, Approve Plan, Manual Verify, Edit, Spawn Sub-Task, Delete
+ * - In Progress: View Output, Resume, Approve Plan, Edit, Spawn Sub-Task, Delete
  * - Waiting Approval: Refine (inline secondary), Verify, View Logs, View PR, Edit, Spawn Sub-Task, Delete
  * - Verified: View Logs, View PR, View Branch, Complete, Edit, Spawn Sub-Task, Delete
  * - Running (auto task): View Logs, Approve Plan, Edit, Spawn Sub-Task, Force Stop
@@ -349,7 +349,7 @@ export const RowActions = memo(function RowActions({
               {handlers.onViewOutput && (
                 <MenuItem
                   icon={FileText}
-                  label="View Logs"
+                  label="View Output"
                   onClick={withClose(handlers.onViewOutput)}
                 />
               )}
@@ -421,7 +421,7 @@ export const RowActions = memo(function RowActions({
               {handlers.onViewOutput && (
                 <MenuItem
                   icon={FileText}
-                  label="View Logs"
+                  label="View Output"
                   onClick={withClose(handlers.onViewOutput)}
                 />
               )}
@@ -433,17 +433,10 @@ export const RowActions = memo(function RowActions({
                   variant="warning"
                 />
               )}
-              {feature.skipTests && handlers.onManualVerify ? (
-                <MenuItem
-                  icon={CheckCircle2}
-                  label="Verify"
-                  onClick={withClose(handlers.onManualVerify)}
-                  variant="success"
-                />
-              ) : handlers.onResume ? (
+              {handlers.onResume ? (
                 <MenuItem
                   icon={RotateCcw}
-                  label="Resume"
+                  label="Resume Pending"
                   onClick={withClose(handlers.onResume)}
                   variant="success"
                 />
@@ -472,7 +465,7 @@ export const RowActions = memo(function RowActions({
               {handlers.onViewOutput && (
                 <MenuItem
                   icon={FileText}
-                  label="View Logs"
+                  label="View Output"
                   onClick={withClose(handlers.onViewOutput)}
                 />
               )}
@@ -518,7 +511,7 @@ export const RowActions = memo(function RowActions({
               {handlers.onViewOutput && (
                 <MenuItem
                   icon={FileText}
-                  label="View Logs"
+                  label="View Output"
                   onClick={withClose(handlers.onViewOutput)}
                 />
               )}
@@ -569,7 +562,7 @@ export const RowActions = memo(function RowActions({
               {handlers.onViewOutput && (
                 <MenuItem
                   icon={FileText}
-                  label="View Logs"
+                  label="View Output"
                   onClick={withClose(handlers.onViewOutput)}
                 />
               )}

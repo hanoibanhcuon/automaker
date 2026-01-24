@@ -16,11 +16,18 @@ import { createBulkDeleteHandler } from './routes/bulk-delete.js';
 import { createDeleteHandler } from './routes/delete.js';
 import { createAgentOutputHandler, createRawOutputHandler } from './routes/agent-output.js';
 import { createGenerateTitleHandler } from './routes/generate-title.js';
+import { createReconcilePlanHandler } from './routes/reconcile-plan.js';
+import { createRebuildOutputHandler } from './routes/rebuild-output.js';
+import { createTimelineHandler } from './routes/timeline.js';
+import { createRecoveryCenterHandler } from './routes/recovery-center.js';
+import { createResumePendingHandler } from './routes/resume-pending.js';
+import type { AutoModeService } from '../../services/auto-mode-service.js';
 
 export function createFeaturesRoutes(
   featureLoader: FeatureLoader,
   settingsService?: SettingsService,
-  events?: EventEmitter
+  events?: EventEmitter,
+  autoModeService?: AutoModeService | null
 ): Router {
   const router = Router();
 
@@ -46,6 +53,27 @@ export function createFeaturesRoutes(
   router.post('/agent-output', createAgentOutputHandler(featureLoader));
   router.post('/raw-output', createRawOutputHandler(featureLoader));
   router.post('/generate-title', createGenerateTitleHandler(settingsService));
+  router.post(
+    '/reconcile-plan',
+    validatePathParams('projectPath'),
+    createReconcilePlanHandler(featureLoader)
+  );
+  router.post(
+    '/rebuild-output',
+    validatePathParams('projectPath'),
+    createRebuildOutputHandler(featureLoader)
+  );
+  router.post(
+    '/resume-pending',
+    validatePathParams('projectPath'),
+    createResumePendingHandler(featureLoader, autoModeService ?? null)
+  );
+  router.post(
+    '/recovery-center',
+    validatePathParams('projectPath'),
+    createRecoveryCenterHandler(featureLoader)
+  );
+  router.post('/timeline', validatePathParams('projectPath'), createTimelineHandler(featureLoader));
 
   return router;
 }

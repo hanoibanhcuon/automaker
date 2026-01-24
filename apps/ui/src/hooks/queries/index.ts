@@ -11,7 +11,13 @@
  */
 
 // Features
-export { useFeatures, useFeature, useAgentOutput } from './use-features';
+export {
+  useFeatures,
+  useFeature,
+  useAgentOutput,
+  useFeatureTimeline,
+  useRecoveryCenter,
+} from './use-features';
 
 // GitHub
 export {

@@ -90,7 +90,7 @@ export const CardActions = memo(function CardActions({
               data-testid={`view-output-${feature.id}`}
             >
               <FileText className="w-3 h-3 mr-1 shrink-0" />
-              <span className="truncate">Logs</span>
+              <span className="truncate">View Logs</span>
               {shortcutKey && (
                 <span
                   className="ml-1.5 px-1 py-0.5 text-[9px] font-mono rounded bg-foreground/10"
@@ -139,22 +139,7 @@ export const CardActions = memo(function CardActions({
                 Approve Plan
               </Button>
             )}
-            {feature.skipTests && onManualVerify ? (
-              <Button
-                variant="default"
-                size="sm"
-                className="flex-1 h-7 text-[11px]"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onManualVerify();
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                data-testid={`manual-verify-${feature.id}`}
-              >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Verify
-              </Button>
-            ) : onResume ? (
+            {onResume ? (
               <Button
                 variant="default"
                 size="sm"
@@ -167,29 +152,14 @@ export const CardActions = memo(function CardActions({
                 data-testid={`resume-feature-${feature.id}`}
               >
                 <RotateCcw className="w-3 h-3 mr-1" />
-                Resume
-              </Button>
-            ) : onVerify ? (
-              <Button
-                variant="default"
-                size="sm"
-                className="flex-1 h-7 text-[11px] bg-[var(--status-success)] hover:bg-[var(--status-success)]/90"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onVerify();
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                data-testid={`verify-feature-${feature.id}`}
-              >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Verify
+                Resume Pending
               </Button>
             ) : null}
-            {onViewOutput && !feature.skipTests && (
+            {onViewOutput && (
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-7 text-[11px] px-2"
+                className="flex-1 h-7 text-[11px]"
                 onClick={(e) => {
                   e.stopPropagation();
                   onViewOutput();
@@ -197,7 +167,8 @@ export const CardActions = memo(function CardActions({
                 onPointerDown={(e) => e.stopPropagation()}
                 data-testid={`view-output-inprogress-${feature.id}`}
               >
-                <FileText className="w-3 h-3" />
+                <FileText className="w-3 h-3 mr-1" />
+                View Output
               </Button>
             )}
           </>
@@ -218,7 +189,7 @@ export const CardActions = memo(function CardActions({
               data-testid={`view-output-verified-${feature.id}`}
             >
               <FileText className="w-3 h-3 mr-1 shrink-0" />
-              <span className="truncate">Logs</span>
+              <span className="truncate">View Output</span>
             </Button>
           )}
           {/* Complete button */}

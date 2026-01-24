@@ -8,6 +8,11 @@ import { FeatureLoader } from '../../../services/feature-loader.js';
 import { getErrorMessage, logError } from '../common.js';
 import { reconcileFeaturePlanSpec, hasPlanSpecChanges } from '../utils/plan-reconcile.js';
 import * as secureFs from '../../../lib/secure-fs.js';
+import {
+  readBackupDependencies,
+  extractDependenciesFromPlan,
+  getDependencyRestoreCandidates,
+} from '../utils/dependency-restore.js';
 
 interface RecoveryItem {
   featureId: string;
@@ -25,6 +30,8 @@ interface RecoveryItem {
     status?: string;
   } | null;
   missingFiles: string[];
+  dependencyRestoreCount: number;
+  dependencyRestoreCandidates: string[];
   hasAgentOutput: boolean;
   issues: string[];
   canResume: boolean;
@@ -34,7 +41,10 @@ interface RecoveryItem {
 export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath } = req.body as { projectPath: string };
+      const { projectPath, includeAll } = req.body as {
+        projectPath: string;
+        includeAll?: boolean;
+      };
 
       if (!projectPath) {
         res.status(400).json({ success: false, error: 'projectPath is required' });
@@ -42,11 +52,14 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
       }
 
       const features = await featureLoader.getAll(projectPath);
+      const allFeatureIds = new Set(features.map((feature) => feature.id));
 
       const items: RecoveryItem[] = [];
       let missingFilesCount = 0;
       let incompletePlansCount = 0;
       let missingOutputCount = 0;
+      let missingDependenciesCount = 0;
+      let issueCount = 0;
 
       for (const feature of features) {
         const reconciled = await reconcileFeaturePlanSpec(projectPath, feature);
@@ -112,6 +125,21 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
           issues.push('Agent output missing');
         }
 
+        const featureJsonPath = featureLoader.getFeatureJsonPath(projectPath, feature.id);
+        const backupDependencies = await readBackupDependencies(featureJsonPath);
+        const planDependencies = extractDependenciesFromPlan(updatedFeature.planSpec?.content);
+        const dependencyRestore = getDependencyRestoreCandidates({
+          feature: updatedFeature,
+          allFeatureIds,
+          backupDependencies,
+          planDependencies,
+        });
+        const dependencyRestoreCount = dependencyRestore.missing.length;
+        const dependencyRestoreCandidates = dependencyRestore.missing.slice(0, 5);
+        if (dependencyRestoreCount > 0) {
+          issues.push('Missing dependencies');
+        }
+
         const statusMismatch =
           planSpec?.status === 'approved' &&
           incompletePlan &&
@@ -122,13 +150,17 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
           issues.push('Status out of sync with plan');
         }
 
-        if (issues.length === 0) {
+        if (issues.length === 0 && !includeAll) {
           continue;
         }
 
+        if (issues.length > 0) {
+          issueCount += 1;
+        }
         if (missingFiles.length > 0) missingFilesCount += missingFiles.length;
         if (incompletePlan) incompletePlansCount += 1;
         if (!hasAgentOutput) missingOutputCount += 1;
+        if (dependencyRestoreCount > 0) missingDependenciesCount += dependencyRestoreCount;
 
         items.push({
           featureId: updatedFeature.id,
@@ -148,6 +180,8 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
               }
             : null,
           missingFiles,
+          dependencyRestoreCount,
+          dependencyRestoreCandidates,
           hasAgentOutput,
           issues,
           canResume: incompletePlan,
@@ -158,10 +192,12 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
       res.json({
         success: true,
         summary: {
-          total: items.length,
+          total: issueCount,
+          totalItems: items.length,
           incompletePlans: incompletePlansCount,
           missingFiles: missingFilesCount,
           missingOutputs: missingOutputCount,
+          missingDependencies: missingDependenciesCount,
         },
         items,
       });

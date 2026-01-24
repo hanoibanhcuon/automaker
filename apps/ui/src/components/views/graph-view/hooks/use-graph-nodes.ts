@@ -34,6 +34,8 @@ export interface TaskNodeData extends Feature {
   onResumeTask?: () => void;
   onSpawnTask?: () => void;
   onDeleteTask?: () => void;
+  onRestoreDependencies?: () => void;
+  onManualRestoreDependencies?: () => void;
   renderMode?: GraphRenderMode;
 }
 
@@ -55,6 +57,8 @@ export interface NodeActionCallbacks {
   onResumeTask?: (featureId: string) => void;
   onSpawnTask?: (featureId: string) => void;
   onDeleteTask?: (featureId: string) => void;
+  onRestoreDependencies?: (featureId: string) => void;
+  onManualRestoreDependencies?: (featureId: string) => void;
   onDeleteDependency?: (sourceId: string, targetId: string) => void;
 }
 
@@ -153,6 +157,12 @@ export function useGraphNodes({
             : undefined,
           onDeleteTask: actionCallbacks?.onDeleteTask
             ? () => actionCallbacks.onDeleteTask!(feature.id)
+            : undefined,
+          onRestoreDependencies: actionCallbacks?.onRestoreDependencies
+            ? () => actionCallbacks.onRestoreDependencies!(feature.id)
+            : undefined,
+          onManualRestoreDependencies: actionCallbacks?.onManualRestoreDependencies
+            ? () => actionCallbacks.onManualRestoreDependencies!(feature.id)
             : undefined,
         },
       };

@@ -16,6 +16,8 @@ import {
   RotateCcw,
   GitFork,
   Trash2,
+  Link2,
+  PencilLine,
 } from 'lucide-react';
 import { TaskNodeData } from '../hooks/use-graph-nodes';
 import { GRAPH_RENDER_MODE_COMPACT } from '../constants';
@@ -439,6 +441,26 @@ export const TaskNode = memo(function TaskNode({ data, selected }: TaskNodeProps
                     Resume Task
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onRestoreDependencies?.();
+                  }}
+                >
+                  <Link2 className="w-3 h-3 mr-2" />
+                  Restore Dependencies
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onManualRestoreDependencies?.();
+                  }}
+                >
+                  <PencilLine className="w-3 h-3 mr-2" />
+                  Manual Dependencies
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-xs cursor-pointer"
                   onClick={(e) => {

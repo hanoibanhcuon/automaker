@@ -8,6 +8,7 @@ import {
   AddFeatureDialog,
   AgentOutputModal,
   BacklogPlanDialog,
+  RestoreDependenciesDialog,
 } from './board-view/dialogs';
 import {
   useBoardFeatures,
@@ -90,6 +91,10 @@ export function GraphViewPage() {
   const [spawnParentFeature, setSpawnParentFeature] = useState<Feature | null>(null);
   const [showOutputModal, setShowOutputModal] = useState(false);
   const [outputFeature, setOutputFeature] = useState<Feature | null>(null);
+  const [restoreDependenciesOpen, setRestoreDependenciesOpen] = useState(false);
+  const [restoreDependenciesFeature, setRestoreDependenciesFeature] = useState<Feature | null>(
+    null
+  );
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [pendingBacklogPlan, setPendingBacklogPlan] = useState<BacklogPlanResult | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
@@ -333,6 +338,79 @@ export function GraphViewPage() {
     [handleAddFeature, handleStartImplementation]
   );
 
+  const handleRestoreDependencies = useCallback(
+    async (feature: Feature) => {
+      if (!currentProject) return;
+      const api = getElectronAPI();
+      const result = await api.features?.restoreDependencies?.(currentProject.path, feature.id);
+      if (!result?.success) {
+        toast.error('Restore dependencies failed', {
+          description: result?.error || 'Unknown error',
+        });
+        return;
+      }
+      const restoredCount = result.summary?.restoredCount ?? 0;
+      if (restoredCount > 0) {
+        toast.success('Dependencies restored', {
+          description: `Added ${restoredCount} link(s).`,
+        });
+      } else {
+        toast('No dependencies restored');
+      }
+      await loadFeatures();
+    },
+    [currentProject, loadFeatures]
+  );
+
+  const handleBulkRestoreDependencies = useCallback(
+    async (featureIds: string[]) => {
+      if (!currentProject || featureIds.length === 0) return;
+      const api = getElectronAPI();
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const featureId of featureIds) {
+        try {
+          const result = await api.features?.restoreDependencies?.(currentProject.path, featureId);
+          if (result?.success) successCount += 1;
+          else failureCount += 1;
+        } catch {
+          failureCount += 1;
+        }
+      }
+
+      if (failureCount > 0) {
+        toast.error('Bulk restore finished', {
+          description: `Success: ${successCount}, Failed: ${failureCount}`,
+        });
+      } else {
+        toast.success('Bulk restore completed', {
+          description: `Processed ${successCount} feature(s).`,
+        });
+      }
+      await loadFeatures();
+    },
+    [currentProject, loadFeatures]
+  );
+
+  const handleOpenManualRestore = useCallback((feature: Feature) => {
+    setRestoreDependenciesFeature(feature);
+    setRestoreDependenciesOpen(true);
+  }, []);
+
+  const handleManualRestoreSave = useCallback(
+    async (dependencies: string[]) => {
+      if (!currentProject || !restoreDependenciesFeature) return;
+      await handleGraphUpdateFeature(restoreDependenciesFeature.id, {
+        dependencies: dependencies.length > 0 ? dependencies : undefined,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.success('Dependencies updated');
+      await loadFeatures();
+    },
+    [currentProject, restoreDependenciesFeature, handleGraphUpdateFeature, loadFeatures]
+  );
+
   if (!currentProject) {
     return (
       <div className="flex-1 flex items-center justify-center" data-testid="graph-view-no-project">
@@ -368,6 +446,9 @@ export function GraphViewPage() {
         onStartTask={handleStartImplementation}
         onStopTask={handleForceStopFeature}
         onResumeTask={handleResumeFeature}
+        onRestoreDependencies={handleRestoreDependencies}
+        onManualRestoreDependencies={handleOpenManualRestore}
+        onBulkRestoreDependencies={handleBulkRestoreDependencies}
         onUpdateFeature={handleGraphUpdateFeature}
         onSpawnTask={(feature) => {
           setSpawnParentFeature(feature);
@@ -433,6 +514,20 @@ export function GraphViewPage() {
         featureStatus={outputFeature?.status}
         onNumberKeyPress={handleOutputModalNumberKeyPress}
         branchName={outputFeature?.branchName}
+      />
+
+      <RestoreDependenciesDialog
+        open={restoreDependenciesOpen}
+        onOpenChange={(open) => {
+          setRestoreDependenciesOpen(open);
+          if (!open) {
+            setRestoreDependenciesFeature(null);
+          }
+        }}
+        feature={restoreDependenciesFeature}
+        features={hookFeatures}
+        projectPath={currentProject?.path ?? null}
+        onSave={handleManualRestoreSave}
       />
 
       {/* Backlog Plan Dialog */}

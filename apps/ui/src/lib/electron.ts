@@ -499,6 +499,23 @@ export interface FeaturesAPI {
     projectPath: string,
     featureId: string
   ) => Promise<{ success: boolean; content?: string; missingFiles?: string[]; error?: string }>;
+  restoreDependencies: (
+    projectPath: string,
+    featureId: string,
+    options?: { dryRun?: boolean }
+  ) => Promise<{
+    success: boolean;
+    summary?: {
+      processed: number;
+      restoredCount: number;
+    };
+    results?: Array<{
+      featureId: string;
+      restoredDependencies: string[];
+      candidates: string[];
+    }>;
+    error?: string;
+  }>;
   resumePending: (
     projectPath: string,
     featureId: string,
@@ -513,13 +530,18 @@ export interface FeaturesAPI {
     };
     error?: string;
   }>;
-  recoveryCenter: (projectPath: string) => Promise<{
+  recoveryCenter: (
+    projectPath: string,
+    includeAll?: boolean
+  ) => Promise<{
     success: boolean;
     summary?: {
       total: number;
+      totalItems?: number;
       incompletePlans: number;
       missingFiles: number;
       missingOutputs: number;
+      missingDependencies?: number;
     };
     items?: Array<{
       featureId: string;
@@ -537,6 +559,8 @@ export interface FeaturesAPI {
         status?: string;
       } | null;
       missingFiles: string[];
+      dependencyRestoreCount: number;
+      dependencyRestoreCandidates: string[];
       hasAgentOutput: boolean;
       issues: string[];
       canResume: boolean;
@@ -3334,6 +3358,18 @@ function createMockFeaturesAPI(): FeaturesAPI {
       mockFileSystem[agentOutputPath] = content;
       return { success: true, content, missingFiles: [] };
     },
+    restoreDependencies: async (
+      projectPath: string,
+      featureId: string,
+      _options?: { dryRun?: boolean }
+    ) => {
+      console.log('[Mock] Restore dependencies:', { projectPath, featureId });
+      return {
+        success: true,
+        summary: { processed: 1, restoredCount: 0 },
+        results: [{ featureId, restoredDependencies: [], candidates: [] }],
+      };
+    },
 
     resumePending: async (projectPath: string, featureId: string, _useWorktrees?: boolean) => {
       console.log('[Mock] Resume pending tasks:', { projectPath, featureId });
@@ -3347,15 +3383,17 @@ function createMockFeaturesAPI(): FeaturesAPI {
       };
     },
 
-    recoveryCenter: async (projectPath: string) => {
-      console.log('[Mock] Recovery center:', { projectPath });
+    recoveryCenter: async (projectPath: string, includeAll?: boolean) => {
+      console.log('[Mock] Recovery center:', { projectPath, includeAll });
       return {
         success: true,
         summary: {
           total: 0,
+          totalItems: 0,
           incompletePlans: 0,
           missingFiles: 0,
           missingOutputs: 0,
+          missingDependencies: 0,
         },
         items: [],
       };

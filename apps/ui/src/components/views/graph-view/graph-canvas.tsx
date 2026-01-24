@@ -36,7 +36,7 @@ import {
 } from './hooks';
 import { cn } from '@/lib/utils';
 import { useDebounceValue } from 'usehooks-ts';
-import { SearchX, Plus, Wand2, ClipboardCheck } from 'lucide-react';
+import { SearchX, Plus, Wand2, ClipboardCheck, X, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanSettingsPopover } from '../board-view/dialogs/plan-settings-popover';
 import {
@@ -77,6 +77,7 @@ interface GraphCanvasProps {
   hasPendingPlan?: boolean;
   planUseSelectedWorktreeBranch?: boolean;
   onPlanUseSelectedWorktreeBranchChange?: (value: boolean) => void;
+  onBulkRestoreDependencies?: (featureIds: string[]) => void;
   backgroundStyle?: React.CSSProperties;
   backgroundSettings?: BackgroundSettings;
   className?: string;
@@ -126,6 +127,7 @@ function GraphCanvasInner({
   hasPendingPlan,
   planUseSelectedWorktreeBranch,
   onPlanUseSelectedWorktreeBranchChange,
+  onBulkRestoreDependencies,
   backgroundStyle,
   backgroundSettings,
   className,
@@ -235,6 +237,10 @@ function GraphCanvasInner({
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
+  const selectedNodeIds = useMemo(
+    () => nodes.filter((node) => node.selected).map((node) => node.id),
+    [nodes]
+  );
 
   // Update nodes/edges when features change, but preserve user positions
   useEffect(() => {
@@ -315,6 +321,12 @@ function GraphCanvasInner({
       saveViewportToStorage(projectPath, viewport);
     }
   }, [projectPath, getViewport]);
+
+  const handleClearSelection = useCallback(() => {
+    setNodes((current) =>
+      current.map((node) => (node.selected ? { ...node, selected: false } : node))
+    );
+  }, [setNodes]);
 
   // Handle layout direction change
   const handleRunLayout = useCallback(
@@ -543,41 +555,72 @@ function GraphCanvasInner({
 
         {/* Add Feature Button */}
         <Panel position="top-right">
-          <div className="flex items-center gap-2">
-            {onOpenPlanDialog && (
-              <div className="flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 py-1 shadow-sm">
-                {hasPendingPlan && (
-                  <button
-                    onClick={onOpenPlanDialog}
-                    className="flex items-center text-emerald-500 hover:text-emerald-400 transition-colors"
-                    data-testid="graph-plan-review-button"
-                  >
-                    <ClipboardCheck className="w-4 h-4" />
-                  </button>
-                )}
+          <div className="flex flex-col items-end gap-2">
+            {selectedNodeIds.length > 0 && onBulkRestoreDependencies && (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/60 px-2 py-1 shadow-sm">
+                <span className="text-xs text-muted-foreground">
+                  Selected: {selectedNodeIds.length}
+                </span>
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
-                  onClick={onOpenPlanDialog}
-                  className="gap-1.5"
-                  data-testid="graph-plan-button"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => onBulkRestoreDependencies(selectedNodeIds)}
+                  data-testid="graph-bulk-restore-deps"
                 >
-                  <Wand2 className="w-4 h-4" />
-                  Plan
+                  <Link2 className="w-3.5 h-3.5 mr-1" />
+                  Restore Dependencies
                 </Button>
-                {onPlanUseSelectedWorktreeBranchChange &&
-                  planUseSelectedWorktreeBranch !== undefined && (
-                    <PlanSettingsPopover
-                      planUseSelectedWorktreeBranch={planUseSelectedWorktreeBranch}
-                      onPlanUseSelectedWorktreeBranchChange={onPlanUseSelectedWorktreeBranchChange}
-                    />
-                  )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={handleClearSelection}
+                  title="Clear selection"
+                  data-testid="graph-clear-selection"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
               </div>
             )}
-            <Button variant="default" size="sm" onClick={onAddFeature} className="gap-1.5">
-              <Plus className="w-4 h-4" />
-              Add Feature
-            </Button>
+            <div className="flex items-center gap-2">
+              {onOpenPlanDialog && (
+                <div className="flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 py-1 shadow-sm">
+                  {hasPendingPlan && (
+                    <button
+                      onClick={onOpenPlanDialog}
+                      className="flex items-center text-emerald-500 hover:text-emerald-400 transition-colors"
+                      data-testid="graph-plan-review-button"
+                    >
+                      <ClipboardCheck className="w-4 h-4" />
+                    </button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onOpenPlanDialog}
+                    className="gap-1.5"
+                    data-testid="graph-plan-button"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    Plan
+                  </Button>
+                  {onPlanUseSelectedWorktreeBranchChange &&
+                    planUseSelectedWorktreeBranch !== undefined && (
+                      <PlanSettingsPopover
+                        planUseSelectedWorktreeBranch={planUseSelectedWorktreeBranch}
+                        onPlanUseSelectedWorktreeBranchChange={
+                          onPlanUseSelectedWorktreeBranchChange
+                        }
+                      />
+                    )}
+                </div>
+              )}
+              <Button variant="default" size="sm" onClick={onAddFeature} className="gap-1.5">
+                <Plus className="w-4 h-4" />
+                Add Feature
+              </Button>
+            </div>
           </div>
         </Panel>
 

@@ -22,6 +22,9 @@ interface GraphViewProps {
   onUpdateFeature?: (featureId: string, updates: Partial<Feature>) => void;
   onSpawnTask?: (feature: Feature) => void;
   onDeleteTask?: (feature: Feature) => void;
+  onRestoreDependencies?: (feature: Feature) => void;
+  onManualRestoreDependencies?: (feature: Feature) => void;
+  onBulkRestoreDependencies?: (featureIds: string[]) => void;
   onAddFeature?: () => void;
   onOpenPlanDialog?: () => void;
   hasPendingPlan?: boolean;
@@ -45,6 +48,9 @@ export function GraphView({
   onUpdateFeature,
   onSpawnTask,
   onDeleteTask,
+  onRestoreDependencies,
+  onManualRestoreDependencies,
+  onBulkRestoreDependencies,
   onAddFeature,
   onOpenPlanDialog,
   hasPendingPlan,
@@ -181,6 +187,18 @@ export function GraphView({
           onDeleteTask?.(feature);
         }
       },
+      onRestoreDependencies: (featureId: string) => {
+        const feature = features.find((f) => f.id === featureId);
+        if (feature) {
+          onRestoreDependencies?.(feature);
+        }
+      },
+      onManualRestoreDependencies: (featureId: string) => {
+        const feature = features.find((f) => f.id === featureId);
+        if (feature) {
+          onManualRestoreDependencies?.(feature);
+        }
+      },
       onDeleteDependency: (sourceId: string, targetId: string) => {
         // Find the target feature and remove the source from its dependencies
         console.log('onDeleteDependency called', { sourceId, targetId });
@@ -216,6 +234,9 @@ export function GraphView({
       onResumeTask,
       onSpawnTask,
       onDeleteTask,
+      onRestoreDependencies,
+      onManualRestoreDependencies,
+      onBulkRestoreDependencies,
       onUpdateFeature,
     ]
   );
@@ -235,6 +256,7 @@ export function GraphView({
         hasPendingPlan={hasPendingPlan}
         planUseSelectedWorktreeBranch={planUseSelectedWorktreeBranch}
         onPlanUseSelectedWorktreeBranchChange={onPlanUseSelectedWorktreeBranchChange}
+        onBulkRestoreDependencies={onBulkRestoreDependencies}
         backgroundStyle={backgroundImageStyle}
         backgroundSettings={backgroundSettings}
         projectPath={projectPath}

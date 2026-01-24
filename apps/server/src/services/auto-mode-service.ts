@@ -3176,16 +3176,23 @@ Format your response as a structured markdown document.`;
       // Remove missing dependencies from features and save them
       // This allows features to proceed when their dependencies have been deleted or don't exist
       if (missingDependencies.size > 0) {
+        const allFeatureIds = new Set(allFeatures.map((feature) => feature.id));
         for (const [featureId, missingDepIds] of missingDependencies) {
           const feature = pendingFeatures.find((f) => f.id === featureId);
           if (feature && feature.dependencies) {
+            // Only remove dependencies that truly no longer exist in the project
+            const trulyMissingDepIds = missingDepIds.filter((depId) => !allFeatureIds.has(depId));
+            if (trulyMissingDepIds.length === 0) {
+              continue;
+            }
+
             // Filter out the missing dependency IDs
             const validDependencies = feature.dependencies.filter(
-              (depId) => !missingDepIds.includes(depId)
+              (depId) => !trulyMissingDepIds.includes(depId)
             );
 
             logger.warn(
-              `[loadPendingFeatures] Feature ${featureId} has missing dependencies: ${missingDepIds.join(', ')}. Removing them automatically.`
+              `[loadPendingFeatures] Feature ${featureId} has missing dependencies: ${trulyMissingDepIds.join(', ')}. Removing them automatically.`
             );
 
             // Update the feature in memory

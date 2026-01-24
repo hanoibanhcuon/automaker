@@ -1669,10 +1669,12 @@ export class HttpApiClient implements ElectronAPI {
       }),
     rebuildOutput: (projectPath: string, featureId: string) =>
       this.post('/api/features/rebuild-output', { projectPath, featureId }),
+    restoreDependencies: (projectPath: string, featureId: string, options?: { dryRun?: boolean }) =>
+      this.post('/api/features/restore-dependencies', { projectPath, featureId, ...options }),
     resumePending: (projectPath: string, featureId: string, useWorktrees?: boolean) =>
       this.post('/api/features/resume-pending', { projectPath, featureId, useWorktrees }),
-    recoveryCenter: (projectPath: string) =>
-      this.post('/api/features/recovery-center', { projectPath }),
+    recoveryCenter: (projectPath: string, includeAll?: boolean) =>
+      this.post('/api/features/recovery-center', { projectPath, includeAll }),
     getTimeline: (projectPath: string, featureId: string) =>
       this.post('/api/features/timeline', { projectPath, featureId }),
     generateTitle: (description: string, projectPath?: string) =>

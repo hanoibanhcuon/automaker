@@ -159,6 +159,8 @@ export interface RecoveryCenterItem {
     status?: string;
   } | null;
   missingFiles: string[];
+  dependencyRestoreCount: number;
+  dependencyRestoreCandidates: string[];
   hasAgentOutput: boolean;
   issues: string[];
   canResume: boolean;
@@ -167,9 +169,11 @@ export interface RecoveryCenterItem {
 
 export interface RecoveryCenterSummary {
   total: number;
+  totalItems?: number;
   incompletePlans: number;
   missingFiles: number;
   missingOutputs: number;
+  missingDependencies?: number;
 }
 
 interface UseTimelineOptions {
@@ -203,13 +207,13 @@ export function useFeatureTimeline(
   });
 }
 
-export function useRecoveryCenter(projectPath: string | undefined) {
+export function useRecoveryCenter(projectPath: string | undefined, includeAll?: boolean) {
   return useQuery({
-    queryKey: queryKeys.features.recovery(projectPath ?? ''),
+    queryKey: [...queryKeys.features.recovery(projectPath ?? ''), includeAll ? 'all' : 'issues'],
     queryFn: async (): Promise<{ summary: RecoveryCenterSummary; items: RecoveryCenterItem[] }> => {
       if (!projectPath) throw new Error('No project path');
       const api = getElectronAPI();
-      const result = await api.features?.recoveryCenter?.(projectPath);
+      const result = await api.features?.recoveryCenter?.(projectPath, includeAll);
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to fetch recovery center');
       }

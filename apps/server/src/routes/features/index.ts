@@ -21,6 +21,7 @@ import { createRebuildOutputHandler } from './routes/rebuild-output.js';
 import { createTimelineHandler } from './routes/timeline.js';
 import { createRecoveryCenterHandler } from './routes/recovery-center.js';
 import { createResumePendingHandler } from './routes/resume-pending.js';
+import { createRestoreDependenciesHandler } from './routes/restore-dependencies.js';
 import type { AutoModeService } from '../../services/auto-mode-service.js';
 
 export function createFeaturesRoutes(
@@ -72,6 +73,11 @@ export function createFeaturesRoutes(
     '/recovery-center',
     validatePathParams('projectPath'),
     createRecoveryCenterHandler(featureLoader)
+  );
+  router.post(
+    '/restore-dependencies',
+    validatePathParams('projectPath'),
+    createRestoreDependenciesHandler(featureLoader)
   );
   router.post('/timeline', validatePathParams('projectPath'), createTimelineHandler(featureLoader));
 

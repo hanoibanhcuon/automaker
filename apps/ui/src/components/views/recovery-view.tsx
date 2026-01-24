@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/app-store';
-import { useRecoveryCenter } from '@/hooks/queries';
+import { useRecoveryCenter, useFeatures } from '@/hooks/queries';
 import { getElectronAPI } from '@/lib/electron';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,11 +14,21 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
-import { RefreshCw, RotateCcw, Play, AlertTriangle, Filter, X } from 'lucide-react';
+import {
+  RefreshCw,
+  RotateCcw,
+  Play,
+  AlertTriangle,
+  Filter,
+  X,
+  Link2,
+  PencilLine,
+} from 'lucide-react';
+import { RestoreDependenciesDialog } from '@/components/views/board-view/dialogs';
 
 type ActionState = Record<
   string,
-  { reconciling?: boolean; rebuilding?: boolean; resuming?: boolean }
+  { reconciling?: boolean; rebuilding?: boolean; resuming?: boolean; restoring?: boolean }
 >;
 
 function formatStatus(status?: string): string {
@@ -36,9 +46,18 @@ export function RecoveryView() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [providerFilter, setProviderFilter] = useState<string[]>([]);
   const [modelFilter, setModelFilter] = useState<string[]>([]);
-  const [bulkAction, setBulkAction] = useState<null | 'reconcile' | 'rebuild' | 'resume'>(null);
+  const [includeAll, setIncludeAll] = useState(false);
+  const [bulkAction, setBulkAction] = useState<
+    null | 'reconcile' | 'rebuild' | 'resume' | 'restore-deps'
+  >(null);
+  const [manualRestoreOpen, setManualRestoreOpen] = useState(false);
+  const [manualRestoreFeatureId, setManualRestoreFeatureId] = useState<string | null>(null);
 
-  const { data, isLoading, error, refetch } = useRecoveryCenter(projectPath ?? undefined);
+  const { data, isLoading, error, refetch } = useRecoveryCenter(
+    projectPath ?? undefined,
+    includeAll
+  );
+  const { data: allFeatures = [] } = useFeatures(projectPath ?? undefined);
 
   const summary = useMemo(
     () =>
@@ -47,6 +66,8 @@ export function RecoveryView() {
         incompletePlans: 0,
         missingFiles: 0,
         missingOutputs: 0,
+        missingDependencies: 0,
+        totalItems: 0,
       },
     [data]
   );
@@ -102,6 +123,10 @@ export function RecoveryView() {
   const selectedCount = selectedFilteredIds.length;
   const resumableSelectedCount = useMemo(
     () => selectedItems.filter((item) => item.canResume).length,
+    [selectedItems]
+  );
+  const restorableSelectedCount = useMemo(
+    () => selectedItems.filter((item) => item.dependencyRestoreCount > 0).length,
     [selectedItems]
   );
   const isAllFilteredSelected = filteredIds.length > 0 && selectedCount === filteredIds.length;
@@ -205,13 +230,64 @@ export function RecoveryView() {
     }
   };
 
-  const runBulkAction = async (action: 'reconcile' | 'rebuild' | 'resume') => {
+  const handleRestoreDependencies = async (featureId: string) => {
+    if (!projectPath) return;
+    setActionFlag(featureId, 'restoring', true);
+    try {
+      const api = getElectronAPI();
+      const result = await api.features?.restoreDependencies?.(projectPath, featureId);
+      if (!result?.success) {
+        toast.error('Restore dependencies failed', {
+          description: result?.error || 'Unknown error',
+        });
+      } else {
+        toast.success('Dependencies restored');
+        await refetch();
+      }
+    } finally {
+      setActionFlag(featureId, 'restoring', false);
+    }
+  };
+
+  const handleOpenManualRestore = (featureId: string) => {
+    setManualRestoreFeatureId(featureId);
+    setManualRestoreOpen(true);
+  };
+
+  const handleManualRestoreSave = async (dependencies: string[]) => {
+    if (!projectPath || !manualRestoreFeatureId) return;
+    const api = getElectronAPI();
+    const result = await api.features?.update?.(projectPath, manualRestoreFeatureId, {
+      dependencies: dependencies.length > 0 ? dependencies : undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    if (!result?.success) {
+      toast.error('Update dependencies failed', {
+        description: result?.error || 'Unknown error',
+      });
+    } else {
+      toast.success('Dependencies updated');
+      await refetch();
+    }
+  };
+
+  const runBulkAction = async (action: 'reconcile' | 'rebuild' | 'resume' | 'restore-deps') => {
     if (!projectPath || selectedFilteredIds.length === 0) return;
     let ids = [...selectedFilteredIds];
     if (action === 'resume') {
       ids = selectedItems.filter((item) => item.canResume).map((item) => item.featureId);
       if (ids.length === 0) {
         toast('No resumable tasks selected');
+        setBulkAction(null);
+        return;
+      }
+    }
+    if (action === 'restore-deps') {
+      ids = selectedItems
+        .filter((item) => item.dependencyRestoreCount > 0)
+        .map((item) => item.featureId);
+      if (ids.length === 0) {
+        toast('No restorable dependencies selected');
         setBulkAction(null);
         return;
       }
@@ -231,6 +307,10 @@ export function RecoveryView() {
           else failureCount += 1;
         } else if (action === 'rebuild') {
           const result = await api.features?.rebuildOutput?.(projectPath, featureId);
+          if (result?.success) successCount += 1;
+          else failureCount += 1;
+        } else if (action === 'restore-deps') {
+          const result = await api.features?.restoreDependencies?.(projectPath, featureId);
           if (result?.success) successCount += 1;
           else failureCount += 1;
         } else {
@@ -359,7 +439,7 @@ export function RecoveryView() {
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 mb-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Issues</CardTitle>
@@ -384,6 +464,14 @@ export function RecoveryView() {
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{summary.missingOutputs}</CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Missing Dependencies</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {summary.missingDependencies ?? 0}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -393,6 +481,10 @@ export function RecoveryView() {
           placeholder="Search by title, ID, or error..."
           className="h-8 w-full sm:w-64"
         />
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={includeAll} onCheckedChange={(v) => setIncludeAll(v === true)} />
+          Show all tasks
+        </label>
         <FilterPopover
           label="Status"
           options={statusOptions}
@@ -449,6 +541,9 @@ export function RecoveryView() {
                 />
                 <div className="text-xs text-muted-foreground">
                   Selected {selectedCount} of {filteredItems.length}
+                  {includeAll && summary.totalItems !== undefined && (
+                    <span className="ml-2">({summary.total} with issues)</span>
+                  )}
                 </div>
                 {selectedCount > 0 && (
                   <Button
@@ -496,6 +591,18 @@ export function RecoveryView() {
                   <Play className="h-3.5 w-3.5 mr-1" />
                   Resume Pending Tasks
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => runBulkAction('restore-deps')}
+                  disabled={restorableSelectedCount === 0 || bulkAction !== null}
+                >
+                  <Link2
+                    className={`h-3.5 w-3.5 mr-1 ${bulkAction === 'restore-deps' ? 'animate-spin' : ''}`}
+                  />
+                  Restore Dependencies
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -535,6 +642,11 @@ export function RecoveryView() {
                     {item.missingFiles.length > 0 && (
                       <span className="text-amber-500">
                         Missing files: {item.missingFiles.length}
+                      </span>
+                    )}
+                    {item.dependencyRestoreCount > 0 && (
+                      <span className="text-amber-500">
+                        Missing dependencies: {item.dependencyRestoreCount}
                       </span>
                     )}
                     {!item.hasAgentOutput && <span className="text-amber-500">Output missing</span>}
@@ -581,6 +693,25 @@ export function RecoveryView() {
                     </div>
                   )}
 
+                  {item.dependencyRestoreCount > 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      <div className="font-medium text-foreground">Missing dependencies</div>
+                      <div className="mt-1 space-y-1">
+                        {item.dependencyRestoreCandidates.map((depId) => (
+                          <div key={depId} className="truncate" title={depId}>
+                            {depId}
+                          </div>
+                        ))}
+                        {item.dependencyRestoreCount > item.dependencyRestoreCandidates.length && (
+                          <div className="text-muted-foreground">
+                            +{item.dependencyRestoreCount - item.dependencyRestoreCandidates.length}{' '}
+                            more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
@@ -613,6 +744,23 @@ export function RecoveryView() {
                       <Play className="h-4 w-4 mr-2" />
                       Resume Pending Tasks
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRestoreDependencies(item.featureId)}
+                      disabled={item.dependencyRestoreCount === 0 || state.restoring}
+                    >
+                      <Link2 className="h-4 w-4 mr-2" />
+                      Restore Dependencies
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenManualRestore(item.featureId)}
+                    >
+                      <PencilLine className="h-4 w-4 mr-2" />
+                      Manual Dependencies
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -620,6 +768,20 @@ export function RecoveryView() {
           })}
         </div>
       )}
+
+      <RestoreDependenciesDialog
+        open={manualRestoreOpen}
+        onOpenChange={(open) => {
+          setManualRestoreOpen(open);
+          if (!open) {
+            setManualRestoreFeatureId(null);
+          }
+        }}
+        feature={allFeatures.find((feature) => feature.id === manualRestoreFeatureId) ?? null}
+        features={allFeatures}
+        projectPath={projectPath}
+        onSave={handleManualRestoreSave}
+      />
     </div>
   );
 }

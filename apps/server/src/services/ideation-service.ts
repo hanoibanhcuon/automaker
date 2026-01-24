@@ -222,10 +222,6 @@ export class IdeationService {
         );
         if (providerResult.provider) {
           claudeCompatibleProvider = providerResult.provider;
-          // Use resolved model from provider if available (maps to Claude model)
-          if (providerResult.resolvedModel) {
-            modelId = providerResult.resolvedModel;
-          }
           credentials = providerResult.credentials ?? credentials;
         }
       }

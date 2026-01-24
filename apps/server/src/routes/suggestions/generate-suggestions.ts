@@ -196,10 +196,6 @@ ${prompts.suggestions.baseTemplate}`;
         '[Suggestions]'
       );
       provider = providerResult.provider;
-      // Use resolved model from provider if available (maps to Claude model)
-      if (providerResult.resolvedModel) {
-        model = providerResult.resolvedModel;
-      }
       credentials = providerResult.credentials ?? (await settingsService.getCredentials());
     }
     // If no settingsService, credentials remains undefined (initialized above)

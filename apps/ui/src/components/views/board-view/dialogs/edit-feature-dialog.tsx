@@ -57,6 +57,7 @@ interface EditFeatureDialogProps {
       description: string;
       skipTests: boolean;
       model: ModelAlias;
+      providerId?: string;
       thinkingLevel: ThinkingLevel;
       reasoningEffort: ReasoningEffort;
       imagePaths: DescriptionImagePath[];
@@ -113,6 +114,7 @@ export function EditFeatureDialog({
     model: migrateModelId(feature?.model) || 'claude-opus',
     thinkingLevel: feature?.thinkingLevel || 'none',
     reasoningEffort: feature?.reasoningEffort || 'none',
+    providerId: feature?.providerId,
   }));
 
   // Check if current model supports planning mode (Claude/Anthropic only)
@@ -163,6 +165,7 @@ export function EditFeatureDialog({
         model: migrateModelId(feature.model) || 'claude-opus',
         thinkingLevel: feature.thinkingLevel || 'none',
         reasoningEffort: feature.reasoningEffort || 'none',
+        providerId: feature.providerId,
       });
       // Reset dependency state
       setParentDependencies(feature.dependencies ?? []);
@@ -221,6 +224,7 @@ export function EditFeatureDialog({
       description: editingFeature.description,
       skipTests: editingFeature.skipTests ?? false,
       model: selectedModel,
+      providerId: modelEntry.providerId,
       thinkingLevel: normalizedThinking,
       reasoningEffort: normalizedReasoning,
       imagePaths: editingFeature.imagePaths ?? [],

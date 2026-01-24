@@ -12,13 +12,14 @@ const logger = createLogger('Agent');
 export function createSendHandler(agentService: AgentService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { sessionId, message, workingDirectory, imagePaths, model, thinkingLevel } =
+      const { sessionId, message, workingDirectory, imagePaths, model, providerId, thinkingLevel } =
         req.body as {
           sessionId: string;
           message: string;
           workingDirectory?: string;
           imagePaths?: string[];
           model?: string;
+          providerId?: string;
           thinkingLevel?: ThinkingLevel;
         };
 
@@ -28,6 +29,7 @@ export function createSendHandler(agentService: AgentService) {
         workingDirectory,
         imageCount: imagePaths?.length || 0,
         model,
+        providerId,
         thinkingLevel,
       });
 
@@ -50,6 +52,7 @@ export function createSendHandler(agentService: AgentService) {
           workingDirectory,
           imagePaths,
           model,
+          providerId,
           thinkingLevel,
         })
         .catch((error) => {

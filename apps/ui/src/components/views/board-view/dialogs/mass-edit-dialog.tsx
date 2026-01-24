@@ -163,7 +163,7 @@ export function MassEditDialog({
       });
       setModel(getInitialValue(selectedFeatures, 'model', 'claude-sonnet') as ModelAlias);
       setThinkingLevel(getInitialValue(selectedFeatures, 'thinkingLevel', 'none') as ThinkingLevel);
-      setProviderId(undefined); // Features don't store providerId, but we track it after selection
+      setProviderId(getInitialValue(selectedFeatures, 'providerId', undefined));
       setPlanningMode(getInitialValue(selectedFeatures, 'planningMode', 'skip') as PlanningMode);
       setRequirePlanApproval(getInitialValue(selectedFeatures, 'requirePlanApproval', false));
       setPriority(getInitialValue(selectedFeatures, 'priority', 2));
@@ -178,7 +178,10 @@ export function MassEditDialog({
   const handleApply = async () => {
     const updates: Partial<Feature> = {};
 
-    if (applyState.model) updates.model = model;
+    if (applyState.model) {
+      updates.model = model;
+      updates.providerId = providerId;
+    }
     if (applyState.thinkingLevel) updates.thinkingLevel = thinkingLevel;
     if (applyState.planningMode) updates.planningMode = planningMode;
     if (applyState.requirePlanApproval) updates.requirePlanApproval = requirePlanApproval;

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +29,7 @@ import { DEFAULT_PHASE_MODELS } from '@automaker/types';
 interface BulkReplaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultProviderId?: string;
 }
 
 // Phase display names for preview
@@ -55,9 +56,14 @@ const CLAUDE_MODEL_DISPLAY: Record<ClaudeModelAlias, string> = {
   opus: 'Claude Opus',
 };
 
-export function BulkReplaceDialog({ open, onOpenChange }: BulkReplaceDialogProps) {
+export function BulkReplaceDialog({
+  open,
+  onOpenChange,
+  defaultProviderId,
+}: BulkReplaceDialogProps) {
   const { phaseModels, setPhaseModel, claudeCompatibleProviders } = useAppStore();
   const [selectedProvider, setSelectedProvider] = useState<string>('anthropic');
+  const wasOpenRef = useRef(false);
 
   // Get enabled providers
   const enabledProviders = useMemo(() => {
@@ -80,6 +86,18 @@ export function BulkReplaceDialog({ open, onOpenChange }: BulkReplaceDialogProps
 
     return options;
   }, [enabledProviders]);
+
+  useEffect(() => {
+    if (!open || wasOpenRef.current) {
+      wasOpenRef.current = open;
+      return;
+    }
+
+    const preferred = defaultProviderId || 'anthropic';
+    const isValid = providerOptions.some((option) => option.id === preferred);
+    setSelectedProvider(isValid ? preferred : 'anthropic');
+    wasOpenRef.current = open;
+  }, [open, defaultProviderId, providerOptions]);
 
   // Get the selected provider config (if custom)
   const selectedProviderConfig = useMemo(() => {

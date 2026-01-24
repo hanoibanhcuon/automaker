@@ -68,6 +68,7 @@ import {
   filterClaudeMdFromContext,
   getMCPServersFromSettings,
   getPromptCustomization,
+  getProviderById,
   getProviderByModelId,
   getPhaseModelWithOverrides,
 } from '../lib/settings-helpers.js';
@@ -1247,8 +1248,10 @@ export class AutoModeService {
         typeof img === 'string' ? img : img.path
       );
 
-      // Get model from feature and determine provider
-      const model = resolveModelString(feature.model, DEFAULT_MODELS.claude);
+      // Get model from feature and determine provider (preserve provider-specific model IDs)
+      const model = feature.providerId
+        ? feature.model || DEFAULT_MODELS.claude
+        : resolveModelString(feature.model, DEFAULT_MODELS.claude);
       const provider = ProviderFactory.getProviderNameForModel(model);
       logger.info(
         `Executing feature ${featureId} with model: ${model}, provider: ${provider} in ${workDir}`
@@ -1275,6 +1278,7 @@ export class AutoModeService {
           systemPrompt: combinedSystemPrompt || undefined,
           autoLoadClaudeMd,
           thinkingLevel: feature.thinkingLevel,
+          providerId: feature.providerId,
           branchName: feature.branchName ?? null,
         }
       );
@@ -1469,8 +1473,10 @@ export class AutoModeService {
         prompts.taskExecution
       );
 
-      // Get model from feature
-      const model = resolveModelString(feature.model, DEFAULT_MODELS.claude);
+      // Get model from feature (preserve provider-specific model IDs)
+      const model = feature.providerId
+        ? feature.model || DEFAULT_MODELS.claude
+        : resolveModelString(feature.model, DEFAULT_MODELS.claude);
 
       // Run the agent for this pipeline step
       await this.runAgent(
@@ -1489,6 +1495,7 @@ export class AutoModeService {
           systemPrompt: contextFilesPrompt || undefined,
           autoLoadClaudeMd,
           thinkingLevel: feature.thinkingLevel,
+          providerId: feature.providerId,
         }
       );
 
@@ -1973,7 +1980,9 @@ ${prompt}
 Address the follow-up instructions above. Review the previous work and make the requested changes or fixes.`;
 
     // Get model from feature and determine provider early for tracking
-    const model = resolveModelString(feature?.model, DEFAULT_MODELS.claude);
+    const model = feature?.providerId
+      ? feature?.model || DEFAULT_MODELS.claude
+      : resolveModelString(feature?.model, DEFAULT_MODELS.claude);
     const provider = ProviderFactory.getProviderNameForModel(model);
     logger.info(`Follow-up for feature ${featureId} using model: ${model}, provider: ${provider}`);
 
@@ -2087,6 +2096,7 @@ Address the follow-up instructions above. Review the previous work and make the 
           systemPrompt: contextFilesPrompt || undefined,
           autoLoadClaudeMd,
           thinkingLevel: feature?.thinkingLevel,
+          providerId: feature?.providerId,
         }
       );
 
@@ -3288,6 +3298,7 @@ You can use the Read tool to view these images at any time during implementation
       systemPrompt?: string;
       autoLoadClaudeMd?: boolean;
       thinkingLevel?: ThinkingLevel;
+      providerId?: string;
       branchName?: string | null;
     }
   ): Promise<void> {
@@ -3436,31 +3447,47 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
     // Try to find a provider for the model (if it's a provider model like "GLM-4.7")
     // This allows users to select provider models in the Auto Mode / Feature execution
     let claudeCompatibleProvider: import('@automaker/types').ClaudeCompatibleProvider | undefined;
-    let providerResolvedModel: string | undefined;
-    if (finalModel && this.settingsService) {
-      const providerResult = await getProviderByModelId(
-        finalModel,
-        this.settingsService,
-        '[AutoMode]'
-      );
-      if (providerResult.provider) {
-        claudeCompatibleProvider = providerResult.provider;
-        providerResolvedModel = providerResult.resolvedModel;
-        logger.info(
-          `[AutoMode] Using provider "${providerResult.provider.name}" for model "${finalModel}"` +
-            (providerResolvedModel ? ` -> resolved to "${providerResolvedModel}"` : '')
+    let providerCredentials = credentials;
+    const selectedProviderId = options?.providerId;
+    if (this.settingsService) {
+      if (selectedProviderId) {
+        const providerResult = await getProviderById(
+          selectedProviderId,
+          this.settingsService,
+          '[AutoMode]'
         );
+        if (providerResult.provider) {
+          claudeCompatibleProvider = providerResult.provider;
+          providerCredentials = providerResult.credentials ?? providerCredentials;
+          logger.info(
+            `[AutoMode] Using provider "${providerResult.provider.name}" (id: ${selectedProviderId}) for model "${finalModel}"`
+          );
+        } else {
+          logger.warn(
+            `[AutoMode] Provider id "${selectedProviderId}" not found or disabled; falling back to model lookup`
+          );
+        }
+      }
+
+      if (!claudeCompatibleProvider && finalModel) {
+        const providerResult = await getProviderByModelId(
+          finalModel,
+          this.settingsService,
+          '[AutoMode]'
+        );
+        if (providerResult.provider) {
+          claudeCompatibleProvider = providerResult.provider;
+          providerCredentials = providerResult.credentials ?? providerCredentials;
+          logger.info(
+            `[AutoMode] Using provider "${providerResult.provider.name}" for model "${finalModel}"`
+          );
+        }
       }
     }
 
-    // Use the resolved model if available (from mapsToClaudeModel), otherwise use bareModel
-    const effectiveBareModel = providerResolvedModel
-      ? stripProviderPrefix(providerResolvedModel)
-      : bareModel;
-
     const executeOptions: ExecuteOptions = {
       prompt: promptContent,
-      model: effectiveBareModel,
+      model: bareModel,
       maxTurns: maxTurns,
       cwd: workDir,
       allowedTools: allowedTools,
@@ -3469,7 +3496,7 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       settingSources: sdkOptions.settingSources,
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined, // Pass MCP servers configuration
       thinkingLevel: options?.thinkingLevel, // Pass thinking level for extended thinking
-      credentials, // Pass credentials for resolving 'credentials' apiKeySource
+      credentials: providerCredentials, // Pass credentials for resolving 'credentials' apiKeySource
       claudeCompatibleProvider, // Pass provider for alternative endpoint configuration (GLM, MiniMax, etc.)
     };
 
@@ -4549,7 +4576,9 @@ After generating the revised spec, output:
 
       if (isClaudeModel(model) && !hasClaudeKey) {
         const fallbackModel = feature.model
-          ? resolveModelString(feature.model, DEFAULT_MODELS.claude)
+          ? feature.providerId
+            ? feature.model
+            : resolveModelString(feature.model, DEFAULT_MODELS.claude)
           : null;
         if (fallbackModel && !isClaudeModel(fallbackModel)) {
           console.log(

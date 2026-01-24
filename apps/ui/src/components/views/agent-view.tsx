@@ -72,6 +72,7 @@ export function AgentView() {
     sessionId: currentSessionId || '',
     workingDirectory: currentProject?.path,
     model: modelSelection.model,
+    providerId: modelSelection.providerId,
     thinkingLevel: modelSelection.thinkingLevel,
     onToolUse: (toolName) => {
       setCurrentTool(toolName);

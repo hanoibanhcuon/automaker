@@ -110,7 +110,12 @@ export function BacklogPlanDialog({
     // Use model override if set, otherwise use global default (extract model string from PhaseModelEntry)
     const effectiveModelEntry = modelOverride || normalizeEntry(phaseModels.backlogPlanningModel);
     const effectiveModel = effectiveModelEntry.model;
-    const result = await api.backlogPlan.generate(projectPath, prompt, effectiveModel);
+    const result = await api.backlogPlan.generate(
+      projectPath,
+      prompt,
+      effectiveModel,
+      effectiveModelEntry.providerId
+    );
     if (!result.success) {
       logger.error('Backlog plan generation failed to start', {
         error: result.error,
@@ -408,7 +413,7 @@ export function BacklogPlanDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl w-[min(96vw,960px)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-primary" />
@@ -423,10 +428,10 @@ export function BacklogPlanDialog({
 
         <div className="py-4 overflow-y-auto">{renderContent()}</div>
 
-        <DialogFooter>
+        <DialogFooter className="flex flex-wrap gap-2 sm:gap-3">
           {mode === 'input' && (
             <>
-              <div className="flex items-center gap-2 mr-auto">
+              <div className="flex items-center gap-2 mr-auto min-w-0 flex-1">
                 <span className="text-xs text-muted-foreground">Model:</span>
                 <ModelOverrideTrigger
                   currentModelEntry={effectiveModelEntry}
@@ -435,6 +440,7 @@ export function BacklogPlanDialog({
                   size="sm"
                   variant="button"
                   isOverridden={modelOverride !== null}
+                  className="min-w-0 flex-1 sm:flex-none sm:w-[360px]"
                 />
               </div>
               <Button variant="outline" onClick={onClose}>

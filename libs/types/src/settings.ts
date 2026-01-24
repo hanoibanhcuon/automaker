@@ -280,6 +280,23 @@ export const CLAUDE_PROVIDER_TEMPLATES: ClaudeCompatibleProviderTemplate[] = [
     ],
   },
   {
+    templateId: 'custom',
+    name: 'CLIProxyAPI',
+    providerType: 'custom',
+    baseUrl: 'http://localhost:8317',
+    defaultApiKeySource: 'inline',
+    useAuthToken: true,
+    timeoutMs: 3000000,
+    disableNonessentialTraffic: true,
+    description: 'Local CLIProxyAPI proxy with Claude-compatible endpoint',
+    apiKeyUrl: 'https://github.com/router-for-me/CLIProxyAPI',
+    defaultModels: [
+      { id: 'claude-haiku', displayName: 'Claude Haiku', mapsToClaudeModel: 'haiku' },
+      { id: 'claude-sonnet', displayName: 'Claude Sonnet', mapsToClaudeModel: 'sonnet' },
+      { id: 'claude-opus', displayName: 'Claude Opus', mapsToClaudeModel: 'opus' },
+    ],
+  },
+  {
     templateId: 'openrouter',
     name: 'OpenRouter',
     providerType: 'openrouter',

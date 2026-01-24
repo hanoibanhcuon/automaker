@@ -29,6 +29,7 @@ import {
   getSkillsConfiguration,
   getSubagentsConfiguration,
   getCustomSubagents,
+  getProviderById,
   getProviderByModelId,
 } from '../lib/settings-helpers.js';
 
@@ -50,6 +51,7 @@ interface QueuedPrompt {
   message: string;
   imagePaths?: string[];
   model?: string;
+  providerId?: string;
   thinkingLevel?: ThinkingLevel;
   addedAt: string;
 }
@@ -150,6 +152,7 @@ export class AgentService {
     workingDirectory,
     imagePaths,
     model,
+    providerId,
     thinkingLevel,
     reasoningEffort,
   }: {
@@ -158,6 +161,7 @@ export class AgentService {
     workingDirectory?: string;
     imagePaths?: string[];
     model?: string;
+    providerId?: string;
     thinkingLevel?: ThinkingLevel;
     reasoningEffort?: ReasoningEffort;
   }) {
@@ -281,21 +285,41 @@ export class AgentService {
       // Try to find a provider for the model (if it's a provider model like "GLM-4.7")
       // This allows users to select provider models in the Agent Runner UI
       let claudeCompatibleProvider: import('@automaker/types').ClaudeCompatibleProvider | undefined;
-      let providerResolvedModel: string | undefined;
+      let providerCredentials = credentials;
       const requestedModel = model || session.model;
-      if (requestedModel && this.settingsService) {
-        const providerResult = await getProviderByModelId(
-          requestedModel,
-          this.settingsService,
-          '[AgentService]'
-        );
-        if (providerResult.provider) {
-          claudeCompatibleProvider = providerResult.provider;
-          providerResolvedModel = providerResult.resolvedModel;
-          this.logger.info(
-            `[AgentService] Using provider "${providerResult.provider.name}" for model "${requestedModel}"` +
-              (providerResolvedModel ? ` -> resolved to "${providerResolvedModel}"` : '')
+      if (this.settingsService) {
+        if (providerId) {
+          const providerResult = await getProviderById(
+            providerId,
+            this.settingsService,
+            '[AgentService]'
           );
+          if (providerResult.provider) {
+            claudeCompatibleProvider = providerResult.provider;
+            providerCredentials = providerResult.credentials ?? providerCredentials;
+            this.logger.info(
+              `[AgentService] Using provider "${providerResult.provider.name}" (id: ${providerId}) for model "${requestedModel ?? 'unknown'}"`
+            );
+          } else {
+            this.logger.warn(
+              `[AgentService] Provider id "${providerId}" not found or disabled; falling back to model lookup`
+            );
+          }
+        }
+
+        if (!claudeCompatibleProvider && requestedModel) {
+          const providerResult = await getProviderByModelId(
+            requestedModel,
+            this.settingsService,
+            '[AgentService]'
+          );
+          if (providerResult.provider) {
+            claudeCompatibleProvider = providerResult.provider;
+            providerCredentials = providerResult.credentials ?? providerCredentials;
+            this.logger.info(
+              `[AgentService] Using provider "${providerResult.provider.name}" for model "${requestedModel}"`
+            );
+          }
         }
       }
 
@@ -325,15 +349,10 @@ export class AgentService {
       const effectiveThinkingLevel = thinkingLevel ?? session.thinkingLevel;
       const effectiveReasoningEffort = reasoningEffort ?? session.reasoningEffort;
 
-      // When using a provider model, use the resolved Claude model (from mapsToClaudeModel)
-      // e.g., "GLM-4.5-Air" -> "claude-haiku-4-5"
-      const modelForSdk = providerResolvedModel || model;
-      const sessionModelForSdk = providerResolvedModel ? undefined : session.model;
-
       const sdkOptions = createChatOptions({
         cwd: effectiveWorkDir,
-        model: modelForSdk,
-        sessionModel: sessionModelForSdk,
+        model,
+        sessionModel: session.model,
         systemPrompt: combinedSystemPrompt,
         abortController: session.abortController!,
         autoLoadClaudeMd,
@@ -409,7 +428,7 @@ export class AgentService {
         agents: customSubagents, // Pass custom subagents for task delegation
         thinkingLevel: effectiveThinkingLevel, // Pass thinking level for Claude models
         reasoningEffort: effectiveReasoningEffort, // Pass reasoning effort for Codex models
-        credentials, // Pass credentials for resolving 'credentials' apiKeySource
+        credentials: providerCredentials, // Pass credentials for resolving 'credentials' apiKeySource
         claudeCompatibleProvider, // Pass provider for alternative endpoint configuration (GLM, MiniMax, etc.)
       };
 
@@ -798,6 +817,7 @@ export class AgentService {
       message: string;
       imagePaths?: string[];
       model?: string;
+      providerId?: string;
       thinkingLevel?: ThinkingLevel;
     }
   ): Promise<{ success: boolean; queuedPrompt?: QueuedPrompt; error?: string }> {
@@ -811,6 +831,7 @@ export class AgentService {
       message: prompt.message,
       imagePaths: prompt.imagePaths,
       model: prompt.model,
+      providerId: prompt.providerId,
       thinkingLevel: prompt.thinkingLevel,
       addedAt: new Date().toISOString(),
     };
@@ -941,6 +962,7 @@ export class AgentService {
         message: nextPrompt.message,
         imagePaths: nextPrompt.imagePaths,
         model: nextPrompt.model,
+        providerId: nextPrompt.providerId,
         thinkingLevel: nextPrompt.thinkingLevel,
       });
     } catch (error) {

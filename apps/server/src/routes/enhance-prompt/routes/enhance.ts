@@ -124,9 +124,8 @@ export function createEnhanceHandler(
       const userPrompt = buildUserPrompt(validMode, trimmedText, true);
 
       // Check if the model is a provider model (like "GLM-4.5-Air")
-      // If so, get the provider config and resolved Claude model
+      // If so, get the provider config
       let claudeCompatibleProvider: import('@automaker/types').ClaudeCompatibleProvider | undefined;
-      let providerResolvedModel: string | undefined;
       let credentials = await settingsService?.getCredentials();
 
       if (model && settingsService) {
@@ -137,18 +136,13 @@ export function createEnhanceHandler(
         );
         if (providerResult.provider) {
           claudeCompatibleProvider = providerResult.provider;
-          providerResolvedModel = providerResult.resolvedModel;
           credentials = providerResult.credentials;
-          logger.info(
-            `Using provider "${providerResult.provider.name}" for model "${model}"` +
-              (providerResolvedModel ? ` -> resolved to "${providerResolvedModel}"` : '')
-          );
+          logger.info(`Using provider "${providerResult.provider.name}" for model "${model}"`);
         }
       }
 
-      // Resolve the model - use provider resolved model, passed model, or default to sonnet
-      const resolvedModel =
-        providerResolvedModel || resolveModelString(model, CLAUDE_MODEL_MAP.sonnet);
+      // Resolve the model - passed model, or default to sonnet
+      const resolvedModel = resolveModelString(model, CLAUDE_MODEL_MAP.sonnet);
 
       logger.debug(`Using model: ${resolvedModel}`);
 

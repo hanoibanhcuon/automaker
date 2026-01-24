@@ -574,6 +574,24 @@ export async function getPhaseModelWithOverrides(
       }
     }
 
+    // Fallback: if providerId is missing but model matches a provider model, use that provider.
+    if (!provider && phaseModel.model) {
+      const providers = globalSettings.claudeCompatibleProviders || [];
+      const normalizedModel = phaseModel.model.toLowerCase();
+      const matchedProvider = providers.find((p) => {
+        if (p.enabled === false) return false;
+        return (p.models || []).some((m) => m.id.toLowerCase() === normalizedModel);
+      });
+
+      if (matchedProvider) {
+        logger.info(
+          `${logPrefix} Matched provider "${matchedProvider.name}" for model "${phaseModel.model}" without providerId`
+        );
+        provider = matchedProvider;
+        phaseModel = { ...phaseModel, providerId: matchedProvider.id };
+      }
+    }
+
     return {
       phaseModel,
       isProjectOverride,

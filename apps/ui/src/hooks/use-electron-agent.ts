@@ -13,6 +13,7 @@ interface UseElectronAgentOptions {
   sessionId: string;
   workingDirectory?: string;
   model?: string;
+  providerId?: string;
   thinkingLevel?: string;
   onToolUse?: (toolName: string, toolInput: unknown) => void;
 }
@@ -23,6 +24,7 @@ interface QueuedPrompt {
   message: string;
   imagePaths?: string[];
   model?: string;
+  providerId?: string;
   thinkingLevel?: string;
   addedAt: string;
 }
@@ -70,6 +72,7 @@ export function useElectronAgent({
   sessionId,
   workingDirectory,
   model,
+  providerId,
   thinkingLevel,
   onToolUse,
 }: UseElectronAgentOptions): UseElectronAgentResult {
@@ -141,6 +144,7 @@ export function useElectronAgent({
           workingDirectory,
           imagePaths,
           model,
+          providerId,
           thinkingLevel
         );
 
@@ -157,7 +161,7 @@ export function useElectronAgent({
         throw err;
       }
     },
-    [sessionId, workingDirectory, model, thinkingLevel, isProcessing]
+    [sessionId, workingDirectory, model, providerId, thinkingLevel, isProcessing]
   );
 
   // Message queue for queuing messages when agent is busy
@@ -430,6 +434,7 @@ export function useElectronAgent({
           workingDirectory,
           imagePaths,
           model,
+          providerId,
           thinkingLevel
         );
 
@@ -445,7 +450,7 @@ export function useElectronAgent({
         setIsProcessing(false);
       }
     },
-    [sessionId, workingDirectory, model, thinkingLevel, isProcessing]
+    [sessionId, workingDirectory, model, providerId, thinkingLevel, isProcessing]
   );
 
   // Stop current execution
@@ -538,6 +543,7 @@ export function useElectronAgent({
           messageContent,
           imagePaths,
           model,
+          providerId,
           thinkingLevel
         );
 
@@ -549,7 +555,7 @@ export function useElectronAgent({
         setError(err instanceof Error ? err.message : 'Failed to add to queue');
       }
     },
-    [sessionId, workingDirectory, model, thinkingLevel]
+    [sessionId, workingDirectory, model, providerId, thinkingLevel]
   );
 
   // Remove a prompt from the server queue

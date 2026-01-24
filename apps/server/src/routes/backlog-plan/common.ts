@@ -17,6 +17,7 @@ let runningDetails: {
   projectPath: string;
   prompt: string;
   model?: string;
+  providerId?: string;
   startedAt: string;
 } | null = null;
 
@@ -48,6 +49,7 @@ export function setRunningDetails(
     projectPath: string;
     prompt: string;
     model?: string;
+    providerId?: string;
     startedAt: string;
   } | null
 ): void {
@@ -58,6 +60,7 @@ export function getRunningDetails(): {
   projectPath: string;
   prompt: string;
   model?: string;
+  providerId?: string;
   startedAt: string;
 } | null {
   return runningDetails;

@@ -29,6 +29,8 @@ import {
   getAutoLoadClaudeMdSetting,
   getPromptCustomization,
   getPhaseModelWithOverrides,
+  getProviderById,
+  getProviderByModelId,
 } from '../../lib/settings-helpers.js';
 
 const featureLoader = new FeatureLoader();
@@ -93,7 +95,8 @@ export async function generateBacklogPlan(
   events: EventEmitter,
   abortController: AbortController,
   settingsService?: SettingsService,
-  model?: string
+  model?: string,
+  providerId?: string
 ): Promise<BacklogPlanResult> {
   try {
     // Load current features
@@ -128,8 +131,44 @@ export async function generateBacklogPlan(
     let credentials: import('@automaker/types').Credentials | undefined;
 
     if (effectiveModel) {
-      // Use explicit override - just get credentials
+      // Use explicit override - resolve provider if provided
       credentials = await settingsService?.getCredentials();
+
+      if (settingsService) {
+        if (providerId) {
+          const providerResult = await getProviderById(
+            providerId,
+            settingsService,
+            '[BacklogPlan]'
+          );
+          if (providerResult.provider) {
+            claudeCompatibleProvider = providerResult.provider;
+            credentials = providerResult.credentials ?? credentials;
+            logger.info(
+              `[BacklogPlan] Using provider "${providerResult.provider.name}" (id: ${providerId})`
+            );
+          } else {
+            logger.warn(
+              `[BacklogPlan] Provider id "${providerId}" not found or disabled; falling back to model lookup`
+            );
+          }
+        }
+
+        if (!claudeCompatibleProvider) {
+          const providerResult = await getProviderByModelId(
+            effectiveModel,
+            settingsService,
+            '[BacklogPlan]'
+          );
+          if (providerResult.provider) {
+            claudeCompatibleProvider = providerResult.provider;
+            credentials = providerResult.credentials ?? credentials;
+            logger.info(
+              `[BacklogPlan] Using provider "${providerResult.provider.name}" for model "${effectiveModel}"`
+            );
+          }
+        }
+      }
     } else if (settingsService) {
       // Use settings-based model with provider info
       const phaseResult = await getPhaseModelWithOverrides(
@@ -166,13 +205,17 @@ export async function generateBacklogPlan(
       '[BacklogPlan]'
     );
 
-    // For Cursor models, we need to combine prompts with explicit instructions
-    // because Cursor doesn't support systemPrompt separation like Claude SDK
+    // For Cursor and Claude-compatible proxy models, embed the system prompt
+    // because some providers do not respect a separate system prompt channel.
     let finalPrompt = userPrompt;
     let finalSystemPrompt: string | undefined = systemPrompt;
 
-    if (isCursorModel(effectiveModel)) {
-      logger.info('[BacklogPlan] Using Cursor model - adding explicit no-file-write instructions');
+    const embedSystemPrompt = isCursorModel(effectiveModel) || Boolean(claudeCompatibleProvider);
+    if (embedSystemPrompt) {
+      const providerLabel = isCursorModel(effectiveModel) ? 'Cursor' : 'Claude-compatible provider';
+      logger.info(
+        `[BacklogPlan] Using ${providerLabel} - embedding system prompt with strict JSON instructions`
+      );
       finalPrompt = `${systemPrompt}
 
 CRITICAL INSTRUCTIONS:
@@ -218,20 +261,27 @@ ${userPrompt}`;
           }
         }
       } else if (msg.type === 'result' && msg.subtype === 'success' && msg.result) {
-        // Use result if it's a final accumulated message (from Cursor provider)
-        logger.info('[BacklogPlan] Received result from Cursor, length:', msg.result.length);
+        // Use result if it's a final accumulated message
+        logger.info('[BacklogPlan] Received result, length:', msg.result.length);
         logger.info('[BacklogPlan] Previous responseText length:', responseText.length);
         if (msg.result.length > responseText.length) {
-          logger.info('[BacklogPlan] Using Cursor result (longer than accumulated text)');
+          logger.info('[BacklogPlan] Using result (longer than accumulated text)');
           responseText = msg.result;
         } else {
-          logger.info('[BacklogPlan] Keeping accumulated text (longer than Cursor result)');
+          logger.info('[BacklogPlan] Keeping accumulated text (longer than result)');
         }
       }
     }
 
+    if (!responseText.trim()) {
+      throw new Error('Empty response from provider');
+    }
+
     // Parse the response
     const result = parsePlanResponse(responseText);
+    if (result.summary === 'Failed to parse AI response') {
+      throw new Error('Failed to parse AI response');
+    }
 
     await saveBacklogPlan(projectPath, {
       savedAt: new Date().toISOString(),

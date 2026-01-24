@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/app-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -31,6 +32,7 @@ import {
   Server,
   Settings2,
   Trash2,
+  Upload,
   Zap,
 } from 'lucide-react';
 import {
@@ -49,6 +51,7 @@ import type {
 } from '@automaker/types';
 import { CLAUDE_PROVIDER_TEMPLATES } from '@automaker/types';
 import { Badge } from '@/components/ui/badge';
+import { BulkReplaceDialog } from '@/components/views/settings-view/model-defaults/bulk-replace-dialog';
 
 // Generate unique ID for providers
 function generateProviderId(): string {
@@ -142,6 +145,11 @@ export function ApiProfilesSection() {
     (typeof CLAUDE_PROVIDER_TEMPLATES)[0] | null
   >(null);
   const [showModelMappings, setShowModelMappings] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [showBulkReplaceDialog, setShowBulkReplaceDialog] = useState(false);
+  const [bulkReplaceProviderId, setBulkReplaceProviderId] = useState<string | null>(null);
 
   const handleOpenAddDialog = (templateName?: string) => {
     const template = templateName
@@ -203,6 +211,111 @@ export function ApiProfilesSection() {
     setShowApiKey(false);
     // For fixed providers, hide model mappings by default when editing
     setShowModelMappings(!hasFixedSettings(provider.providerType));
+    setIsDialogOpen(true);
+  };
+
+  const openImportDialog = () => {
+    setImportJsonText('');
+    setImportError(null);
+    setIsImportDialogOpen(true);
+  };
+
+  const handleImportJson = () => {
+    setImportError(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(importJsonText);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Invalid JSON');
+      return;
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      setImportError('Invalid JSON structure');
+      return;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const envCandidate = record.env;
+    const env =
+      envCandidate && typeof envCandidate === 'object'
+        ? (envCandidate as Record<string, unknown>)
+        : (record as Record<string, unknown>);
+
+    const readEnvString = (key: string): string => {
+      const value = env[key];
+      if (value === null || value === undefined) return '';
+      return typeof value === 'string' ? value : String(value);
+    };
+
+    const baseUrl = readEnvString('ANTHROPIC_BASE_URL');
+    if (!baseUrl) {
+      setImportError('Missing ANTHROPIC_BASE_URL in JSON');
+      return;
+    }
+
+    const authToken = readEnvString('ANTHROPIC_AUTH_TOKEN');
+    const apiKey = readEnvString('ANTHROPIC_API_KEY');
+    const useAuthToken = authToken.length > 0;
+    const resolvedApiKey = authToken || apiKey;
+
+    const timeoutMs = readEnvString('API_TIMEOUT_MS');
+    const disableNonessentialTraffic = Boolean(
+      env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === 1 ||
+      env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === '1' ||
+      env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === true
+    );
+
+    const models: ModelFormEntry[] = [];
+    const haikuModel = readEnvString('ANTHROPIC_DEFAULT_HAIKU_MODEL');
+    if (haikuModel) {
+      models.push({
+        id: haikuModel,
+        displayName: haikuModel,
+        mapsToClaudeModel: 'haiku',
+      });
+    }
+
+    const sonnetModel = readEnvString('ANTHROPIC_DEFAULT_SONNET_MODEL');
+    if (sonnetModel) {
+      models.push({
+        id: sonnetModel,
+        displayName: sonnetModel,
+        mapsToClaudeModel: 'sonnet',
+      });
+    }
+
+    const opusModel = readEnvString('ANTHROPIC_DEFAULT_OPUS_MODEL');
+    if (opusModel) {
+      models.push({
+        id: opusModel,
+        displayName: opusModel,
+        mapsToClaudeModel: 'opus',
+      });
+    }
+
+    const importedName =
+      (typeof record.name === 'string' && record.name.trim()) ||
+      (typeof record.providerName === 'string' && record.providerName.trim()) ||
+      'Imported Provider';
+
+    setFormData({
+      name: importedName,
+      providerType: 'custom',
+      baseUrl,
+      apiKeySource: 'inline',
+      apiKey: resolvedApiKey,
+      useAuthToken,
+      timeoutMs,
+      models,
+      disableNonessentialTraffic,
+    });
+
+    setEditingProviderId(null);
+    setCurrentTemplate(null);
+    setShowApiKey(false);
+    setShowModelMappings(true);
+    setIsImportDialogOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -341,6 +454,10 @@ export function ApiProfilesSection() {
               <Plus className="w-4 h-4 mr-2" />
               Custom Provider
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={openImportDialog}>
+              <Upload className="w-4 h-4 mr-2" />
+              Import JSON Config
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             {CLAUDE_PROVIDER_TEMPLATES.filter((t) => t.providerType !== 'anthropic').map(
               (template) => (
@@ -383,6 +500,10 @@ export function ApiProfilesSection() {
                 onEdit={() => handleOpenEditDialog(provider)}
                 onDelete={() => setDeleteConfirmId(provider.id)}
                 onToggleEnabled={() => toggleClaudeCompatibleProviderEnabled(provider.id)}
+                onApplyToDefaults={() => {
+                  setBulkReplaceProviderId(provider.id);
+                  setShowBulkReplaceDialog(true);
+                }}
               />
             ))}
           </div>
@@ -793,6 +914,45 @@ export function ApiProfilesSection() {
         </DialogContent>
       </Dialog>
 
+      {/* Import JSON Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import JSON Config</DialogTitle>
+            <DialogDescription>
+              Paste a CLIProxyAPI or Claude-compatible JSON config with env keys like
+              ANTHROPIC_BASE_URL and ANTHROPIC_DEFAULT_*_MODEL.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            <Textarea
+              value={importJsonText}
+              onChange={(e) => setImportJsonText(e.target.value)}
+              placeholder='{"env":{"ANTHROPIC_BASE_URL":"http://localhost:8317", "ANTHROPIC_AUTH_TOKEN":"..."}}'
+              className="min-h-[180px] font-mono text-xs"
+            />
+            {importError && <p className="text-xs text-destructive">{importError}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleImportJson} disabled={!importJsonText.trim()}>
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Replace Dialog */}
+      <BulkReplaceDialog
+        open={showBulkReplaceDialog}
+        onOpenChange={setShowBulkReplaceDialog}
+        defaultProviderId={bulkReplaceProviderId ?? undefined}
+      />
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
         <DialogContent className="max-w-sm">
@@ -825,9 +985,16 @@ interface ProviderCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onToggleEnabled: () => void;
+  onApplyToDefaults: () => void;
 }
 
-function ProviderCard({ provider, onEdit, onDelete, onToggleEnabled }: ProviderCardProps) {
+function ProviderCard({
+  provider,
+  onEdit,
+  onDelete,
+  onToggleEnabled,
+  onApplyToDefaults,
+}: ProviderCardProps) {
   const isEnabled = provider.enabled !== false;
 
   return (
@@ -893,6 +1060,10 @@ function ProviderCard({ provider, onEdit, onDelete, onToggleEnabled }: ProviderC
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="w-4 h-4 mr-2" />
                 Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onApplyToDefaults}>
+                <Settings2 className="w-4 h-4 mr-2" />
+                Apply to Model Defaults
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

@@ -2040,6 +2040,7 @@ export class HttpApiClient implements ElectronAPI {
       workingDirectory?: string,
       imagePaths?: string[],
       model?: string,
+      providerId?: string,
       thinkingLevel?: string
     ): Promise<{ success: boolean; error?: string }> =>
       this.post('/api/agent/send', {
@@ -2048,6 +2049,7 @@ export class HttpApiClient implements ElectronAPI {
         workingDirectory,
         imagePaths,
         model,
+        providerId,
         thinkingLevel,
       }),
 
@@ -2076,6 +2078,7 @@ export class HttpApiClient implements ElectronAPI {
       message: string,
       imagePaths?: string[],
       model?: string,
+      providerId?: string,
       thinkingLevel?: string
     ): Promise<{
       success: boolean;
@@ -2084,12 +2087,20 @@ export class HttpApiClient implements ElectronAPI {
         message: string;
         imagePaths?: string[];
         model?: string;
+        providerId?: string;
         thinkingLevel?: string;
         addedAt: string;
       };
       error?: string;
     }> =>
-      this.post('/api/agent/queue/add', { sessionId, message, imagePaths, model, thinkingLevel }),
+      this.post('/api/agent/queue/add', {
+        sessionId,
+        message,
+        imagePaths,
+        model,
+        providerId,
+        thinkingLevel,
+      }),
 
     queueList: (
       sessionId: string
@@ -2100,6 +2111,7 @@ export class HttpApiClient implements ElectronAPI {
         message: string;
         imagePaths?: string[];
         model?: string;
+        providerId?: string;
         thinkingLevel?: string;
         addedAt: string;
       }>;
@@ -2392,9 +2404,10 @@ export class HttpApiClient implements ElectronAPI {
     generate: (
       projectPath: string,
       prompt: string,
-      model?: string
+      model?: string,
+      providerId?: string
     ): Promise<{ success: boolean; error?: string }> =>
-      this.post('/api/backlog-plan/generate', { projectPath, prompt, model }),
+      this.post('/api/backlog-plan/generate', { projectPath, prompt, model, providerId }),
 
     stop: (): Promise<{ success: boolean; error?: string }> =>
       this.post('/api/backlog-plan/stop', {}),

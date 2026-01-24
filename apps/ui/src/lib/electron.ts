@@ -732,7 +732,8 @@ export interface ElectronAPI {
     generate: (
       projectPath: string,
       prompt: string,
-      model?: string
+      model?: string,
+      providerId?: string
     ) => Promise<{ success: boolean; error?: string }>;
     stop: () => Promise<{ success: boolean; error?: string }>;
     status: (projectPath: string) => Promise<{

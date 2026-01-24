@@ -270,6 +270,7 @@ export function useBoardActions({
         description: string;
         skipTests: boolean;
         model: ModelAlias;
+        providerId?: string;
         thinkingLevel: ThinkingLevel;
         reasoningEffort: ReasoningEffort;
         imagePaths: DescriptionImagePath[];

@@ -44,6 +44,8 @@ export interface Feature {
   dependencies?: string[];
   spec?: string;
   model?: string;
+  /** Provider ID for Claude-compatible provider models */
+  providerId?: string;
   imagePaths?: Array<string | FeatureImagePath | { path: string; [key: string]: unknown }>;
   textFilePaths?: FeatureTextFilePath[];
   // Branch info - worktree path is derived at runtime from branchName

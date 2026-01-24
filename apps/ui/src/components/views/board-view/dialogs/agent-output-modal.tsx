@@ -15,6 +15,13 @@ import {
   RefreshCw,
   RotateCcw,
   Play,
+  StopCircle,
+  AlertTriangle,
+  Columns,
+  PanelLeft,
+  PanelRight,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { getElectronAPI } from '@/lib/electron';
@@ -24,10 +31,13 @@ import { TaskProgressPanel } from '@/components/ui/task-progress-panel';
 import { Markdown } from '@/components/ui/markdown';
 import { useAppStore } from '@/store/app-store';
 import { extractSummary } from '@/lib/log-parser';
-import { useAgentOutput, useFeatureTimeline } from '@/hooks/queries';
+import { parseAgentContext } from '@/lib/agent-context-parser';
+import { useAgentOutput, useFeature, useFeatureTimeline, useRunningAgents } from '@/hooks/queries';
 import { Button } from '@/components/ui/button';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AutoModeEvent } from '@/types/electron';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 
 interface AgentOutputModalProps {
   open: boolean;
@@ -44,7 +54,8 @@ interface AgentOutputModalProps {
   branchName?: string;
 }
 
-type ViewMode = 'summary' | 'parsed' | 'raw' | 'changes' | 'timeline';
+type ViewMode = 'summary' | 'parsed' | 'raw' | 'changes' | 'timeline' | 'plan';
+type PanelMode = 'split' | 'plan' | 'output';
 
 export function AgentOutputModal({
   open,
@@ -67,6 +78,12 @@ export function AgentOutputModal({
   const [isReconciling, setIsReconciling] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>('split');
+  const [leftPanelRatio, setLeftPanelRatio] = useState(0.36);
+  const isDraggingRef = useRef(false);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
   const [reconcileInfo, setReconcileInfo] = useState<{
     tasksCompleted: number;
     tasksTotal: number;
@@ -77,10 +94,51 @@ export function AgentOutputModal({
   const lastAutoReconcileRef = useRef<string>('');
   const useWorktrees = useAppStore((state) => state.useWorktrees);
   const queryClient = useQueryClient();
+  const { data: runningAgentsData } = useRunningAgents();
+  const isFeatureRunning = useMemo(() => {
+    if (!resolvedProjectPath || !runningAgentsData?.agents) return false;
+    return runningAgentsData.agents.some(
+      (agent) => agent.featureId === featureId && agent.projectPath === resolvedProjectPath
+    );
+  }, [runningAgentsData?.agents, featureId, resolvedProjectPath]);
+  const isPlanComplete = Boolean(
+    reconcileInfo &&
+    reconcileInfo.tasksTotal > 0 &&
+    reconcileInfo.tasksCompleted >= reconcileInfo.tasksTotal
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isDraggingRef.current || !layoutRef.current) return;
+      const rect = layoutRef.current.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const minWidth = 280;
+      const maxWidth = rect.width * 0.7;
+      const nextWidth = Math.min(Math.max(x, minWidth), maxWidth);
+      setLeftPanelRatio(nextWidth / rect.width);
+    };
+
+    const handleMouseUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Use React Query for initial output loading
   const { data: initialOutput = '', isLoading } = useAgentOutput(resolvedProjectPath, featureId, {
     enabled: open && !!resolvedProjectPath,
+  });
+  const { data: featureData } = useFeature(resolvedProjectPath, featureId, {
+    enabled: open && !!resolvedProjectPath && !isBacklogPlan,
+    pollingInterval: false,
   });
 
   useEffect(() => {
@@ -186,6 +244,23 @@ export function AgentOutputModal({
     }
   }, [resolvedProjectPath, featureId, isBacklogPlan, isResuming, useWorktrees, queryClient]);
 
+  const handleForceStop = useCallback(async () => {
+    if (!featureId || isBacklogPlan) return;
+    if (isStopping) return;
+    const confirmed = window.confirm('Force stop this task? This will abort the running agent.');
+    if (!confirmed) return;
+    try {
+      setIsStopping(true);
+      const api = getElectronAPI();
+      const result = await api.autoMode?.stopFeature?.(featureId);
+      if (result?.success) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.runningAgents.all() });
+      }
+    } finally {
+      setIsStopping(false);
+    }
+  }, [featureId, isBacklogPlan, isStopping, queryClient]);
+
   useEffect(() => {
     if (!open || !resolvedProjectPath || !featureId || isBacklogPlan) return;
     const key = `${resolvedProjectPath}:${featureId}`;
@@ -199,6 +274,19 @@ export function AgentOutputModal({
 
   // Extract summary from output
   const summary = useMemo(() => extractSummary(output), [output]);
+  const activeTodos = useMemo(() => {
+    if (!output) return [];
+    const todos = parseAgentContext(output).todos;
+    const seen = new Set<string>();
+    const deduped: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }> = [];
+    for (const todo of todos) {
+      const key = `${todo.status}:${todo.content}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(todo);
+    }
+    return deduped.slice(0, 10);
+  }, [output]);
 
   // Determine the effective view mode - default to summary if available, otherwise parsed
   const effectiveViewMode = viewMode ?? (summary ? 'summary' : 'parsed');
@@ -455,7 +543,12 @@ export function AgentOutputModal({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent
-        className="w-full h-full max-w-full max-h-full sm:w-[60vw] sm:max-w-[60vw] sm:max-h-[80vh] sm:h-auto sm:rounded-xl rounded-none flex flex-col"
+        className={cn(
+          'w-full h-full max-w-full max-h-full rounded-none flex flex-col',
+          isFullscreen
+            ? 'sm:w-screen sm:max-w-none sm:max-h-none sm:h-screen sm:rounded-none'
+            : 'sm:w-[90vw] sm:max-w-[90vw] sm:min-w-[90vw] sm:h-[90vh] sm:max-h-[90vh] sm:min-h-[90vh] sm:rounded-xl'
+        )}
         data-testid="agent-output-modal"
       >
         <DialogHeader className="shrink-0">
@@ -466,6 +559,219 @@ export function AgentOutputModal({
               )}
               Agent Output
             </DialogTitle>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1 rounded-md bg-muted/60 p-1">
+                <Button
+                  type="button"
+                  variant={panelMode === 'split' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPanelMode('split')}
+                  title="Split view"
+                  data-testid="layout-split"
+                >
+                  <Columns className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={panelMode === 'plan' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPanelMode('plan')}
+                  title="Focus plan"
+                  data-testid="layout-plan"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={panelMode === 'output' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPanelMode('output')}
+                  title="Focus output"
+                  data-testid="layout-output"
+                >
+                  <PanelRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                data-testid="toggle-fullscreen"
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+          <DialogDescription
+            className="mt-1 max-h-24 overflow-y-auto break-words"
+            data-testid="agent-output-description"
+          >
+            {featureDescription}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div
+          ref={layoutRef}
+          className={cn(
+            'flex-1 min-h-0 min-w-0 px-3 pb-3 mt-3',
+            panelMode === 'split' ? 'flex flex-col lg:flex-row gap-3' : 'flex flex-col gap-2'
+          )}
+        >
+          <div
+            className={cn(
+              'flex flex-col gap-2 min-h-0 min-w-0',
+              panelMode === 'output' ? 'hidden' : 'flex',
+              panelMode === 'split' ? 'lg:flex-shrink-0' : 'flex-1'
+            )}
+            style={
+              panelMode === 'split'
+                ? {
+                    flexBasis: `${Math.round(leftPanelRatio * 100)}%`,
+                    maxWidth: `${Math.round(leftPanelRatio * 100)}%`,
+                    minWidth: 280,
+                  }
+                : undefined
+            }
+          >
+            {!isBacklogPlan && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border/50 bg-card/40 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
+                  {reconcileInfo ? (
+                    <>
+                      <span className="truncate font-semibold text-foreground">
+                        Plan health: {reconcileInfo.tasksCompleted}/{reconcileInfo.tasksTotal}{' '}
+                        completed
+                      </span>
+                      {reconcileInfo.missingFiles.length > 0 && (
+                        <span className="text-amber-500 font-semibold">
+                          Missing files: {reconcileInfo.missingFiles.length}
+                        </span>
+                      )}
+                      {reconcileInfo.statusAdjusted && (
+                        <span className="text-amber-500 font-semibold">Moved back to backlog</span>
+                      )}
+                      {isPlanComplete && isFeatureRunning && (
+                        <span className="flex items-center gap-1 text-amber-500 font-semibold">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          Plan complete but agent still running
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="truncate font-semibold text-foreground">
+                      Plan health: not available
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => handleReconcile('manual')}
+                    disabled={isReconciling}
+                    data-testid="reconcile-plan"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 mr-1 ${isReconciling ? 'animate-spin' : ''}`}
+                    />
+                    Reconcile
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleRebuildOutput}
+                    disabled={isRebuilding}
+                    data-testid="rebuild-output"
+                  >
+                    <RotateCcw
+                      className={`w-3.5 h-3.5 mr-1 ${isRebuilding ? 'animate-spin' : ''}`}
+                    />
+                    Rebuild Output
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleResumePending}
+                    disabled={
+                      isResuming ||
+                      isFeatureRunning ||
+                      !reconcileInfo ||
+                      reconcileInfo.tasksTotal === 0 ||
+                      reconcileInfo.tasksCompleted >= reconcileInfo.tasksTotal
+                    }
+                    data-testid="resume-pending"
+                  >
+                    <Play className="w-3.5 h-3.5 mr-1" />
+                    Resume Pending Tasks
+                  </Button>
+                  {isFeatureRunning && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleForceStop}
+                      disabled={isStopping}
+                      data-testid="force-stop"
+                    >
+                      <StopCircle className="w-3.5 h-3.5 mr-1" />
+                      Force Stop
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!isBacklogPlan ? (
+              <TaskProgressPanel
+                featureId={featureId}
+                projectPath={resolvedProjectPath}
+                className="flex-1 min-h-0"
+                compact
+                activeTodos={activeTodos}
+                listMaxHeightClass="h-full max-h-none"
+              />
+            ) : (
+              <div className="rounded-lg border border-border/50 bg-card/40 p-3 text-sm text-muted-foreground">
+                Execution plan is not available for backlog planning sessions.
+              </div>
+            )}
+          </div>
+
+          {panelMode === 'split' && (
+            <div
+              className="hidden lg:flex w-1 cursor-col-resize rounded-full bg-border/60 hover:bg-brand-500/70 transition-colors"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                isDraggingRef.current = true;
+              }}
+              title="Drag to resize"
+              data-testid="layout-resize-handle"
+            />
+          )}
+
+          <div
+            className={cn(
+              'flex flex-col min-h-0 min-w-0 gap-2',
+              panelMode === 'plan' ? 'hidden' : 'flex-1'
+            )}
+          >
             <div className="flex items-center gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
               {summary && (
                 <button
@@ -481,6 +787,20 @@ export function AgentOutputModal({
                   Summary
                 </button>
               )}
+              {!isBacklogPlan && (
+                <button
+                  onClick={() => setViewMode('plan')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                    effectiveViewMode === 'plan'
+                      ? 'bg-primary/20 text-primary shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                  data-testid="view-mode-plan"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Plan
+                </button>
+              )}
               <button
                 onClick={() => setViewMode('parsed')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
@@ -493,6 +813,20 @@ export function AgentOutputModal({
                 <List className="w-3.5 h-3.5" />
                 Logs
               </button>
+              {!isBacklogPlan && (
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                    effectiveViewMode === 'timeline'
+                      ? 'bg-primary/20 text-primary shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                  data-testid="view-mode-timeline"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  Timeline
+                </button>
+              )}
               <button
                 onClick={() => setViewMode('changes')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
@@ -517,193 +851,109 @@ export function AgentOutputModal({
                 <FileText className="w-3.5 h-3.5" />
                 Raw
               </button>
-              {!isBacklogPlan && (
-                <button
-                  onClick={() => setViewMode('timeline')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
-                    effectiveViewMode === 'timeline'
-                      ? 'bg-primary/20 text-primary shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                  }`}
-                  data-testid="view-mode-timeline"
-                >
-                  <History className="w-3.5 h-3.5" />
-                  Timeline
-                </button>
-              )}
             </div>
-          </div>
-          <DialogDescription
-            className="mt-1 max-h-24 overflow-y-auto wrap-break-word"
-            data-testid="agent-output-description"
-          >
-            {featureDescription}
-          </DialogDescription>
-        </DialogHeader>
 
-        {/* Task Progress Panel - shows when tasks are being executed */}
-        {!isBacklogPlan && (
-          <TaskProgressPanel
-            featureId={featureId}
-            projectPath={resolvedProjectPath}
-            className="shrink-0 mx-3 my-2"
-          />
-        )}
-
-        {!isBacklogPlan && (
-          <div className="mx-3 mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground min-w-0">
-              {reconcileInfo ? (
-                <>
-                  <span className="truncate">
-                    Plan health: {reconcileInfo.tasksCompleted}/{reconcileInfo.tasksTotal} completed
-                  </span>
-                  {reconcileInfo.missingFiles.length > 0 && (
-                    <span className="text-amber-500">
-                      Missing files: {reconcileInfo.missingFiles.length}
-                    </span>
-                  )}
-                  {reconcileInfo.statusAdjusted && (
-                    <span className="text-amber-500">Moved back to backlog</span>
-                  )}
-                </>
-              ) : (
-                <span className="truncate">Plan health: not available</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={() => handleReconcile('manual')}
-                disabled={isReconciling}
-                data-testid="reconcile-plan"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isReconciling ? 'animate-spin' : ''}`} />
-                Reconcile
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={handleRebuildOutput}
-                disabled={isRebuilding}
-                data-testid="rebuild-output"
-              >
-                <RotateCcw className={`w-3.5 h-3.5 mr-1 ${isRebuilding ? 'animate-spin' : ''}`} />
-                Rebuild Output
-              </Button>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={handleResumePending}
-                disabled={
-                  isResuming ||
-                  !reconcileInfo ||
-                  reconcileInfo.tasksTotal === 0 ||
-                  reconcileInfo.tasksCompleted >= reconcileInfo.tasksTotal
-                }
-                data-testid="resume-pending"
-              >
-                <Play className="w-3.5 h-3.5 mr-1" />
-                Resume Pending Tasks
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {effectiveViewMode === 'changes' ? (
-          <div className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto scrollbar-visible">
-            {resolvedProjectPath ? (
-              <GitDiffPanel
-                projectPath={resolvedProjectPath}
-                featureId={branchName || featureId}
-                compact={false}
-                useWorktrees={useWorktrees}
-                className="border-0 rounded-lg"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <Spinner size="lg" className="mr-2" />
-                Loading...
-              </div>
-            )}
-          </div>
-        ) : effectiveViewMode === 'summary' && summary ? (
-          <div className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
-            <Markdown>{summary}</Markdown>
-          </div>
-        ) : effectiveViewMode === 'timeline' ? (
-          <div className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
-            {isTimelineLoading ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <Spinner size="lg" className="mr-2" />
-                Loading timeline...
-              </div>
-            ) : timelineEntries.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                No timeline entries available.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {timelineEntries.map((entry) => (
-                  <div key={entry.id} className="flex gap-3">
-                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/60 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="font-medium text-foreground">{entry.title}</span>
-                        <span className="whitespace-nowrap">
-                          {new Date(entry.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      {entry.detail && (
-                        <div className="text-xs text-muted-foreground break-words mt-1">
-                          {entry.detail}
-                        </div>
-                      )}
-                    </div>
+            {effectiveViewMode === 'changes' ? (
+              <div className="flex-1 min-h-0 min-w-0 overflow-y-auto scrollbar-visible">
+                {resolvedProjectPath ? (
+                  <GitDiffPanel
+                    projectPath={resolvedProjectPath}
+                    featureId={branchName || featureId}
+                    compact={false}
+                    useWorktrees={useWorktrees}
+                    className="border-0 rounded-lg"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <Spinner size="lg" className="mr-2" />
+                    Loading...
                   </div>
-                ))}
+                )}
               </div>
+            ) : effectiveViewMode === 'summary' && summary ? (
+              <div className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
+                <Markdown className="break-words">{summary}</Markdown>
+              </div>
+            ) : effectiveViewMode === 'timeline' ? (
+              <div className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
+                {isTimelineLoading ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <Spinner size="lg" className="mr-2" />
+                    Loading timeline...
+                  </div>
+                ) : timelineEntries.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                    No timeline entries available.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {timelineEntries.map((entry) => (
+                      <div key={entry.id} className="flex gap-3">
+                        <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/60 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">{entry.title}</span>
+                            <span className="whitespace-nowrap">
+                              {new Date(entry.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          {entry.detail && (
+                            <div className="text-xs text-muted-foreground break-words mt-1">
+                              {entry.detail}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : effectiveViewMode === 'plan' ? (
+              <div className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
+                {featureData?.planSpec?.content ? (
+                  <Markdown className="break-words text-xs [&_p]:text-xs [&_li]:text-xs [&_code]:text-[11px] [&_pre]:text-[11px] [&_pre]:whitespace-pre-wrap [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-xs">
+                    {featureData.planSpec.content}
+                  </Markdown>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                    Plan content is not available.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div
+                  ref={scrollRef}
+                  onScroll={handleScroll}
+                  className="flex-1 min-h-0 overflow-y-auto bg-popover border border-border/50 rounded-lg p-4 font-mono text-xs scrollbar-visible"
+                >
+                  {isLoading && !output ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      <Spinner size="lg" className="mr-2" />
+                      Loading output...
+                    </div>
+                  ) : !output ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      No output yet. The agent will stream output here as it works.
+                    </div>
+                  ) : effectiveViewMode === 'parsed' ? (
+                    <LogViewer output={output} />
+                  ) : (
+                    <div className="whitespace-pre-wrap wrap-break-word text-foreground/80">
+                      {output}
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-xs text-muted-foreground text-center shrink-0">
+                  {autoScrollRef.current
+                    ? 'Auto-scrolling enabled'
+                    : 'Scroll to bottom to enable auto-scroll'}
+                </div>
+              </>
             )}
           </div>
-        ) : (
-          <>
-            <div
-              ref={scrollRef}
-              onScroll={handleScroll}
-              className="flex-1 min-h-0 sm:min-h-[200px] sm:max-h-[60vh] overflow-y-auto bg-popover border border-border/50 rounded-lg p-4 font-mono text-xs scrollbar-visible"
-            >
-              {isLoading && !output ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <Spinner size="lg" className="mr-2" />
-                  Loading output...
-                </div>
-              ) : !output ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No output yet. The agent will stream output here as it works.
-                </div>
-              ) : effectiveViewMode === 'parsed' ? (
-                <LogViewer output={output} />
-              ) : (
-                <div className="whitespace-pre-wrap wrap-break-word text-foreground/80">
-                  {output}
-                </div>
-              )}
-            </div>
-
-            <div className="text-xs text-muted-foreground text-center shrink-0">
-              {autoScrollRef.current
-                ? 'Auto-scrolling enabled'
-                : 'Scroll to bottom to enable auto-scroll'}
-            </div>
-          </>
-        )}
+        </div>
       </DialogContent>
     </Dialog>
   );

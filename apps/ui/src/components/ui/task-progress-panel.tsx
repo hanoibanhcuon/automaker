@@ -27,6 +27,12 @@ interface TaskProgressPanelProps {
   className?: string;
   /** Whether the panel starts expanded (default: true) */
   defaultExpanded?: boolean;
+  /** Optional TODOs for the active task (deduped/limited upstream) */
+  activeTodos?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>;
+  /** Override max height class for the task list */
+  listMaxHeightClass?: string;
+  /** Compact mode for tighter layouts */
+  compact?: boolean;
 }
 
 export function TaskProgressPanel({
@@ -34,6 +40,9 @@ export function TaskProgressPanel({
   projectPath,
   className,
   defaultExpanded = true,
+  activeTodos,
+  listMaxHeightClass = 'max-h-[200px]',
+  compact = false,
 }: TaskProgressPanelProps) {
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -237,19 +246,32 @@ export function TaskProgressPanel({
             )}
           </div>
           <div className="flex flex-col items-start gap-0.5">
-            <h3 className="font-semibold text-sm tracking-tight">Execution Plan</h3>
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+            <h3 className={cn('font-semibold tracking-tight', compact ? 'text-xs' : 'text-sm')}>
+              Execution Plan
+            </h3>
+            <span
+              className={cn(
+                'text-muted-foreground uppercase tracking-wider font-medium',
+                compact ? 'text-[9px]' : 'text-[10px]'
+              )}
+            >
               {completedCount} of {totalCount} tasks completed
             </span>
             {(currentPhase || currentTaskId) && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 {currentPhase && (
-                  <Badge variant="secondary" className="h-5 px-2 text-[10px]">
+                  <Badge
+                    variant="secondary"
+                    className={cn('h-5 px-2', compact ? 'text-[9px]' : 'text-[10px]')}
+                  >
                     Phase: {currentPhase}
                   </Badge>
                 )}
                 {currentTaskId && (
-                  <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                  <Badge
+                    variant="outline"
+                    className={cn('h-5 px-2', compact ? 'text-[9px]' : 'text-[10px]')}
+                  >
                     Active: {currentTaskId}
                   </Badge>
                 )}
@@ -296,7 +318,12 @@ export function TaskProgressPanel({
         )}
       >
         <div className="overflow-hidden">
-          <div className="p-4 pt-2 relative max-h-[200px] overflow-y-auto scrollbar-visible">
+          <div
+            className={cn(
+              'p-4 pt-2 relative overflow-y-auto scrollbar-visible',
+              listMaxHeightClass
+            )}
+          >
             {/* Vertical Connector Line */}
             <div className="absolute left-[2.35rem] top-4 bottom-8 w-px bg-linear-to-b from-border/80 via-border/40 to-transparent" />
 
@@ -315,6 +342,7 @@ export function TaskProgressPanel({
                   startTime && endTime && endTime >= startTime ? endTime - startTime : null;
                 const durationLabel =
                   durationMs && durationMs > 0 ? formatDuration(durationMs) : null;
+                const showTodos = isActive && activeTodos && activeTodos.length > 0;
 
                 return (
                   <div
@@ -351,7 +379,8 @@ export function TaskProgressPanel({
                         <div className="flex items-center justify-between gap-4">
                           <p
                             className={cn(
-                              'text-sm font-medium leading-none truncate pr-4',
+                              'font-medium leading-none truncate pr-4',
+                              compact ? 'text-xs' : 'text-sm',
                               isCompleted &&
                                 'text-muted-foreground line-through decoration-border/60',
                               isActive && 'text-primary font-semibold'
@@ -361,7 +390,10 @@ export function TaskProgressPanel({
                           </p>
                           {durationLabel && (
                             <span
-                              className="text-[10px] text-muted-foreground whitespace-nowrap"
+                              className={cn(
+                                'text-muted-foreground whitespace-nowrap',
+                                compact ? 'text-[9px]' : 'text-[10px]'
+                              )}
                               title={
                                 task.startedAt && task.completedAt
                                   ? `${new Date(task.startedAt).toLocaleString()} - ${new Date(
@@ -376,7 +408,10 @@ export function TaskProgressPanel({
                           {isActive && (
                             <Badge
                               variant="outline"
-                              className="h-5 px-1.5 text-[10px] bg-primary/5 text-primary border-primary/20 animate-pulse"
+                              className={cn(
+                                'h-5 px-1.5 bg-primary/5 text-primary border-primary/20 animate-pulse',
+                                compact ? 'text-[9px]' : 'text-[10px]'
+                              )}
                             >
                               Active
                             </Badge>
@@ -384,7 +419,12 @@ export function TaskProgressPanel({
                         </div>
 
                         {(task.filePath || isActive) && (
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                          <div
+                            className={cn(
+                              'flex items-center gap-2 text-muted-foreground font-mono',
+                              compact ? 'text-[10px]' : 'text-xs'
+                            )}
+                          >
                             {task.filePath ? (
                               <>
                                 <FileCode className="h-3 w-3 opacity-70" />
@@ -395,6 +435,30 @@ export function TaskProgressPanel({
                             ) : (
                               <span className="h-3 block" /> /* Spacer */
                             )}
+                          </div>
+                        )}
+
+                        {showTodos && (
+                          <div className="mt-1.5 space-y-1 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
+                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                              TODO ({activeTodos.length})
+                            </div>
+                            <div
+                              className={cn(
+                                'space-y-1 text-muted-foreground',
+                                compact ? 'text-[10px]' : 'text-[11px]'
+                              )}
+                            >
+                              {activeTodos.map((todo, todoIndex) => (
+                                <div
+                                  key={`${todo.content}-${todoIndex}`}
+                                  className="flex items-start gap-2"
+                                >
+                                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                                  <span className="break-words">{todo.content}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>

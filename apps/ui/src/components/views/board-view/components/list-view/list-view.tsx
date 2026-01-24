@@ -1,8 +1,9 @@
 import { memo, useMemo, useCallback, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { CheckSquare, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { getBlockingDependencies } from '@automaker/dependency-resolver';
+import { getBacklogStepResult } from '@/lib/feature-step';
 import type { Feature } from '@/store/app-store';
 import type { PipelineConfig, FeatureStatusWithPipeline } from '@automaker/types';
 import { ListHeader } from './list-header';
@@ -11,6 +12,7 @@ import { createRowActionHandlers, type RowActionHandlers } from './row-actions';
 import { getStatusLabel, getStatusOrder } from './status-badge';
 import { getColumnsWithPipeline } from '../../constants';
 import type { SortConfig, SortColumn } from '../../hooks/use-list-view-state';
+import type { SelectionTarget } from '../../hooks/use-selection-mode';
 
 /** Empty set constant to avoid creating new instances on each render */
 const EMPTY_SET = new Set<string>();
@@ -69,6 +71,12 @@ export interface ListViewProps {
   onToggleFeatureSelection?: (featureId: string) => void;
   /** Callback when the row is clicked */
   onRowClick?: (feature: Feature) => void;
+  /** Precomputed step map for backlog ordering */
+  stepMap?: Record<string, number>;
+  /** Current selection target (backlog or waiting approval) */
+  selectionTarget?: SelectionTarget;
+  /** Toggle selection mode target */
+  onToggleSelectionMode?: (target: SelectionTarget) => void;
   /** Additional className for custom styling */
   className?: string;
 }
@@ -190,21 +198,37 @@ export const ListView = memo(function ListView({
   selectedFeatureIds = EMPTY_SET,
   onToggleFeatureSelection,
   onRowClick,
+  stepMap,
+  selectionTarget = null,
+  onToggleSelectionMode,
   className,
 }: ListViewProps) {
   // Track collapsed state for each status group
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   // Generate status groups from columnFeaturesMap
-  const statusGroups = useMemo<StatusGroup[]>(() => {
+  const { statusGroups, stepIndexById } = useMemo(() => {
     const columns = getColumnsWithPipeline(pipelineConfig);
     const groups: StatusGroup[] = [];
+    const resolvedStepMap = stepMap ?? getBacklogStepResult(allFeatures).stepMap;
 
     for (const column of columns) {
       const features = columnFeaturesMap[column.id] || [];
       if (features.length > 0) {
         // Sort features within the group according to current sort config
-        const sortedFeatures = sortFeatures(features, sortConfig.column, sortConfig.direction);
+        const sortedFeatures =
+          sortConfig.column === 'step'
+            ? [...features].sort((a, b) => {
+                const aStep = resolvedStepMap[a.id];
+                const bStep = resolvedStepMap[b.id];
+                if (aStep !== undefined && bStep !== undefined) {
+                  return sortConfig.direction === 'asc' ? aStep - bStep : bStep - aStep;
+                }
+                if (aStep !== undefined) return -1;
+                if (bStep !== undefined) return 1;
+                return 0;
+              })
+            : sortFeatures(features, sortConfig.column, sortConfig.direction);
 
         groups.push({
           id: column.id as FeatureStatusWithPipeline,
@@ -216,14 +240,41 @@ export const ListView = memo(function ListView({
     }
 
     // Sort groups by status order
-    return groups.sort((a, b) => getStatusOrder(a.id) - getStatusOrder(b.id));
-  }, [columnFeaturesMap, pipelineConfig, sortConfig]);
+    return {
+      statusGroups: groups.sort((a, b) => getStatusOrder(a.id) - getStatusOrder(b.id)),
+      stepIndexById: resolvedStepMap,
+    };
+  }, [allFeatures, columnFeaturesMap, pipelineConfig, sortConfig, stepMap]);
 
   // Calculate total feature count
   const totalFeatures = useMemo(
     () => statusGroups.reduce((sum, group) => sum + group.features.length, 0),
     [statusGroups]
   );
+
+  const selectableFeatureIds = useMemo(() => {
+    if (!isSelectionMode) return [];
+    const ids: string[] = [];
+    for (const group of statusGroups) {
+      for (const feature of group.features) {
+        if (!selectionTarget || feature.status === selectionTarget) {
+          ids.push(feature.id);
+        }
+      }
+    }
+    return ids;
+  }, [isSelectionMode, selectionTarget, statusGroups]);
+
+  const selectableFeatureSet = useMemo(() => new Set(selectableFeatureIds), [selectableFeatureIds]);
+
+  const selectedSelectableCount = useMemo(() => {
+    if (!isSelectionMode) return 0;
+    let count = 0;
+    selectedFeatureIds.forEach((id) => {
+      if (selectableFeatureSet.has(id)) count += 1;
+    });
+    return count;
+  }, [isSelectionMode, selectedFeatureIds, selectableFeatureSet]);
 
   // Toggle group collapse state
   const toggleGroup = useCallback((groupId: string) => {
@@ -328,15 +379,15 @@ export const ListView = memo(function ListView({
 
   // Calculate selection state for header checkbox
   const selectionState = useMemo(() => {
-    if (!isSelectionMode || totalFeatures === 0) {
+    if (!isSelectionMode || selectableFeatureIds.length === 0) {
       return { allSelected: false, someSelected: false };
     }
-    const selectedCount = selectedFeatureIds.size;
+    const selectedCount = selectedSelectableCount;
     return {
-      allSelected: selectedCount === totalFeatures && selectedCount > 0,
-      someSelected: selectedCount > 0 && selectedCount < totalFeatures,
+      allSelected: selectedCount === selectableFeatureIds.length && selectedCount > 0,
+      someSelected: selectedCount > 0 && selectedCount < selectableFeatureIds.length,
     };
-  }, [isSelectionMode, totalFeatures, selectedFeatureIds]);
+  }, [isSelectionMode, selectableFeatureIds.length, selectedSelectableCount]);
 
   // Handle select all toggle
   const handleSelectAll = useCallback(() => {
@@ -345,18 +396,26 @@ export const ListView = memo(function ListView({
     // If all selected, deselect all; otherwise select all
     if (selectionState.allSelected) {
       // Clear all selections
-      selectedFeatureIds.forEach((id) => onToggleFeatureSelection(id));
+      selectedFeatureIds.forEach((id) => {
+        if (selectableFeatureSet.has(id)) {
+          onToggleFeatureSelection(id);
+        }
+      });
     } else {
       // Select all features that aren't already selected
-      for (const group of statusGroups) {
-        for (const feature of group.features) {
-          if (!selectedFeatureIds.has(feature.id)) {
-            onToggleFeatureSelection(feature.id);
-          }
+      selectableFeatureIds.forEach((id) => {
+        if (!selectedFeatureIds.has(id)) {
+          onToggleFeatureSelection(id);
         }
-      }
+      });
     }
-  }, [onToggleFeatureSelection, selectionState.allSelected, selectedFeatureIds, statusGroups]);
+  }, [
+    onToggleFeatureSelection,
+    selectionState.allSelected,
+    selectedFeatureIds,
+    selectableFeatureIds,
+    selectableFeatureSet,
+  ]);
 
   // Show empty state if no features
   if (totalFeatures === 0) {
@@ -374,6 +433,44 @@ export const ListView = memo(function ListView({
       aria-label="Features list"
       data-testid="list-view"
     >
+      {onToggleSelectionMode && (
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-muted/20">
+          <div className="text-xs text-muted-foreground">Bulk edit</div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-7 px-2 text-xs',
+                selectionTarget === 'backlog'
+                  ? 'text-primary bg-primary/10'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              onClick={() => onToggleSelectionMode('backlog')}
+              data-testid="list-selection-backlog"
+            >
+              <CheckSquare className="w-3.5 h-3.5 mr-1" />
+              Select Backlog
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-7 px-2 text-xs',
+                selectionTarget === 'waiting_approval'
+                  ? 'text-primary bg-primary/10'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              onClick={() => onToggleSelectionMode('waiting_approval')}
+              data-testid="list-selection-waiting-approval"
+            >
+              <CheckSquare className="w-3.5 h-3.5 mr-1" />
+              Select Waiting Approval
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Table header */}
       <ListHeader
         sortConfig={sortConfig}
@@ -412,10 +509,21 @@ export const ListView = memo(function ListView({
                       handlers={createHandlers(feature)}
                       isCurrentAutoTask={runningAutoTasks.includes(feature.id)}
                       isSelected={selectedFeatureIds.has(feature.id)}
-                      showCheckbox={isSelectionMode}
-                      onToggleSelect={() => onToggleFeatureSelection?.(feature.id)}
+                      showCheckbox={
+                        isSelectionMode &&
+                        (!selectionTarget || feature.status === selectionTarget) &&
+                        Boolean(onToggleFeatureSelection)
+                      }
+                      onToggleSelect={
+                        isSelectionMode && (!selectionTarget || feature.status === selectionTarget)
+                          ? () => onToggleFeatureSelection?.(feature.id)
+                          : undefined
+                      }
                       onClick={() => onRowClick?.(feature)}
                       blockingDependencies={getBlockingDeps(feature)}
+                      stepIndex={
+                        feature.status === 'backlog' ? stepIndexById[feature.id] : undefined
+                      }
                     />
                   ))}
                 </div>

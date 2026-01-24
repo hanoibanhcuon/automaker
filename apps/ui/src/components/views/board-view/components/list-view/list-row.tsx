@@ -1,13 +1,15 @@
 // TODO: Remove @ts-nocheck after fixing BaseFeature's index signature issue
 // The `[key: string]: unknown` in BaseFeature causes property access type errors
 // @ts-nocheck
-import { memo, useCallback, useState, useEffect } from 'react';
-import { cn } from '@/lib/utils';
+import { memo, useCallback, useMemo, useState, useEffect } from 'react';
+import { cn, getModelDisplayName } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertCircle, Lock, Hand, Sparkles, FileText } from 'lucide-react';
 import type { Feature } from '@/store/app-store';
+import { useAppStore } from '@/store/app-store';
 import { RowActions, type RowActionHandlers } from './row-actions';
 import { getColumnWidth, getColumnAlign } from './list-header';
+import { getModelProvider } from '@automaker/types';
 
 export interface ListRowProps {
   /** The feature to display */
@@ -26,6 +28,8 @@ export interface ListRowProps {
   onClick?: () => void;
   /** Blocking dependency feature IDs */
   blockingDependencies?: string[];
+  /** Sequential step index within the group (1-based) */
+  stepIndex?: number;
   /** Additional className for custom styling */
   className?: string;
 }
@@ -211,8 +215,48 @@ export const ListRow = memo(function ListRow({
   onToggleSelect,
   onClick,
   blockingDependencies = [],
+  stepIndex,
   className,
 }: ListRowProps) {
+  const claudeCompatibleProviders = useAppStore((state) => state.claudeCompatibleProviders);
+  const defaultFeatureModel = useAppStore((state) => state.defaultFeatureModel);
+  const defaultPlanningMode = useAppStore((state) => state.defaultPlanningMode);
+
+  const effectiveModel = feature.model || defaultFeatureModel?.model || '';
+  const effectiveProviderId = feature.providerId || defaultFeatureModel?.providerId;
+
+  const providerLabel = useMemo(() => {
+    if (effectiveProviderId) {
+      const provider = claudeCompatibleProviders.find((p) => p.id === effectiveProviderId);
+      return provider?.name || effectiveProviderId;
+    }
+    const provider = getModelProvider(effectiveModel);
+    if (provider === 'cursor') return 'Cursor';
+    if (provider === 'codex') return 'Codex';
+    if (provider === 'opencode') return 'OpenCode';
+    return 'Claude';
+  }, [claudeCompatibleProviders, effectiveModel, effectiveProviderId]);
+
+  const modelLabel = useMemo(() => {
+    if (!effectiveModel) return '-';
+    return getModelDisplayName(effectiveModel);
+  }, [effectiveModel]);
+
+  const planningLabel = useMemo(() => {
+    const mode = feature.planningMode || defaultPlanningMode || 'skip';
+    const base =
+      mode === 'skip' ? 'Skip' : mode === 'lite' ? 'Lite' : mode === 'spec' ? 'Spec' : 'Full';
+    if (feature.requirePlanApproval && mode !== 'skip') {
+      return `${base} + Approval`;
+    }
+    return base;
+  }, [feature.planningMode, feature.requirePlanApproval, defaultPlanningMode]);
+
+  const providerModelLabel = useMemo(() => {
+    if (!modelLabel) return providerLabel;
+    return `${providerLabel} / ${modelLabel}`;
+  }, [modelLabel, providerLabel]);
+
   const handleRowClick = useCallback(
     (e: React.MouseEvent) => {
       // Don't trigger row click if clicking on checkbox or actions
@@ -277,6 +321,19 @@ export const ListRow = memo(function ListRow({
         </div>
       )}
 
+      {/* Step column */}
+      <div
+        role="cell"
+        className={cn(
+          'flex items-center pl-3 pr-2 py-3 shrink-0 text-xs text-muted-foreground',
+          getColumnWidth('step'),
+          getColumnAlign('step')
+        )}
+        data-testid={`list-row-step-${feature.id}`}
+      >
+        {stepIndex ? `Step ${stepIndex}` : '-'}
+      </div>
+
       {/* Title column - full width with margin for actions */}
       <div
         role="cell"
@@ -313,6 +370,48 @@ export const ListRow = memo(function ListRow({
             </p>
           )}
         </div>
+      </div>
+
+      {/* Provider / Model column */}
+      <div
+        role="cell"
+        className={cn(
+          'flex items-center pl-3 pr-2 py-3 shrink-0',
+          getColumnWidth('model'),
+          getColumnAlign('model')
+        )}
+        data-testid={`list-row-model-${feature.id}`}
+      >
+        <div className="min-w-0 flex flex-col gap-0.5">
+          <div
+            className="text-xs font-medium whitespace-normal break-words"
+            title={providerModelLabel}
+          >
+            {providerModelLabel}
+          </div>
+          {feature.providerId && (
+            <div
+              className="text-[11px] text-muted-foreground whitespace-normal break-words"
+              title={feature.providerId}
+            >
+              {feature.providerId}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Planning column */}
+
+      <div
+        role="cell"
+        className={cn(
+          'flex items-center pl-0 pr-3 py-3 shrink-0 text-xs',
+          getColumnWidth('planning'),
+          getColumnAlign('planning')
+        )}
+        data-testid={`list-row-planning-${feature.id}`}
+      >
+        <span className="text-muted-foreground">{planningLabel}</span>
       </div>
 
       {/* Priority column */}
@@ -371,15 +470,38 @@ export const ListRow = memo(function ListRow({
  */
 export function getFeatureSortValue(
   feature: Feature,
-  column: 'title' | 'status' | 'category' | 'priority' | 'createdAt' | 'updatedAt'
+  column:
+    | 'step'
+    | 'title'
+    | 'status'
+    | 'category'
+    | 'model'
+    | 'planning'
+    | 'priority'
+    | 'createdAt'
+    | 'updatedAt'
 ): string | number | Date {
   switch (column) {
+    case 'step':
+      return feature.createdAt ? new Date(feature.createdAt) : new Date(0);
     case 'title':
       return (feature.title || feature.description).toLowerCase();
     case 'status':
       return feature.status;
     case 'category':
       return (feature.category || '').toLowerCase();
+    case 'model':
+      return (feature.model || '').toLowerCase();
+    case 'planning': {
+      const mode = feature.planningMode || 'skip';
+      const orderMap: Record<string, number> = {
+        skip: 0,
+        lite: 1,
+        spec: 2,
+        full: 3,
+      };
+      return orderMap[mode] ?? 0;
+    }
     case 'priority':
       return feature.priority || 999; // No priority sorts last
     case 'createdAt':
@@ -396,7 +518,16 @@ export function getFeatureSortValue(
  */
 export function sortFeatures(
   features: Feature[],
-  column: 'title' | 'status' | 'category' | 'priority' | 'createdAt' | 'updatedAt',
+  column:
+    | 'step'
+    | 'title'
+    | 'status'
+    | 'category'
+    | 'model'
+    | 'planning'
+    | 'priority'
+    | 'createdAt'
+    | 'updatedAt',
   direction: 'asc' | 'desc'
 ): Feature[] {
   return [...features].sort((a, b) => {

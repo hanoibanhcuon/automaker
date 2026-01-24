@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { Feature } from '@/store/app-store';
 import { createFeatureMap, getBlockingDependenciesFromMap } from '@automaker/dependency-resolver';
+import { getBacklogStepResult } from '@/lib/feature-step';
 import { GRAPH_RENDER_MODE_FULL, type GraphRenderMode } from '../constants';
 import { GraphFilterResult } from './use-graph-filter';
 
@@ -15,6 +16,7 @@ export interface TaskNodeData extends Feature {
   isBlocked: boolean;
   isRunning: boolean;
   blockingDependencies: string[];
+  stepIndex?: number;
   // Filter highlight states
   isMatched?: boolean;
   isHighlighted?: boolean;
@@ -91,6 +93,8 @@ export function useGraphNodes({
     const edgeList: DependencyEdge[] = [];
     const featureMap = createFeatureMap(features);
     const runningTaskIds = new Set(runningAutoTasks);
+    const { stepMap, orderedFeatures } = getBacklogStepResult(features);
+    const orderedFeatureList = orderedFeatures.length > 0 ? orderedFeatures : features;
 
     // Extract filter state
     const hasActiveFilter = filterResult?.hasActiveFilter ?? false;
@@ -98,8 +102,8 @@ export function useGraphNodes({
     const highlightedNodeIds = filterResult?.highlightedNodeIds ?? new Set<string>();
     const highlightedEdgeIds = filterResult?.highlightedEdgeIds ?? new Set<string>();
 
-    // Create nodes
-    features.forEach((feature) => {
+    // Create nodes (ordered by dependency-aware execution order)
+    orderedFeatureList.forEach((feature) => {
       const isRunning = runningTaskIds.has(feature.id);
       const blockingDeps = getBlockingDependenciesFromMap(feature, featureMap);
 
@@ -117,6 +121,7 @@ export function useGraphNodes({
           isBlocked: blockingDeps.length > 0,
           isRunning,
           blockingDependencies: blockingDeps,
+          stepIndex: feature.status === 'backlog' ? stepMap[feature.id] : undefined,
           // Filter states
           isMatched,
           isHighlighted,

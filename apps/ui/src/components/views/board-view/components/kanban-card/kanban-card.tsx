@@ -38,6 +38,7 @@ function getCursorClass(
 
 interface KanbanCardProps {
   feature: Feature;
+  stepIndex?: number;
   onEdit: () => void;
   onDelete: () => void;
   onViewOutput?: () => void;
@@ -72,6 +73,7 @@ interface KanbanCardProps {
 
 export const KanbanCard = memo(function KanbanCard({
   feature,
+  stepIndex,
   onEdit,
   onDelete,
   onViewOutput,
@@ -236,7 +238,7 @@ export const KanbanCard = memo(function KanbanCard({
       </div>
 
       {/* Priority and Manual Verification badges */}
-      <PriorityBadges feature={feature} />
+      <PriorityBadges feature={feature} stepIndex={stepIndex} />
 
       {/* Card Header */}
       <CardHeaderSection

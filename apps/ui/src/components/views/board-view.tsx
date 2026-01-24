@@ -42,6 +42,7 @@ import { useKeyboardShortcutsConfig } from '@/hooks/use-keyboard-shortcuts';
 import { useWindowState } from '@/hooks/use-window-state';
 // Board-view specific imports
 import { BoardHeader } from './board-view/board-header';
+import { getBacklogStepResult } from '@/lib/feature-step';
 import { KanbanBoard } from './board-view/kanban-board';
 import {
   AddFeatureDialog,
@@ -1093,6 +1094,36 @@ export function BoardView() {
     projectPath: currentProject?.path || null,
   });
 
+  const worktreeFeaturesForSteps = useMemo(() => {
+    const effectiveBranch = currentWorktreeBranch;
+    return hookFeatures.filter((f) => {
+      const featureBranch = f.branchName as string | undefined;
+
+      if (!featureBranch) {
+        return currentWorktreePath === null;
+      }
+
+      if (effectiveBranch === null) {
+        return currentProject?.path
+          ? isPrimaryWorktreeBranch(currentProject.path, featureBranch)
+          : false;
+      }
+
+      return featureBranch === effectiveBranch;
+    });
+  }, [
+    hookFeatures,
+    currentWorktreeBranch,
+    currentWorktreePath,
+    currentProject?.path,
+    isPrimaryWorktreeBranch,
+  ]);
+
+  const { stepMap: backlogStepMap } = useMemo(
+    () => getBacklogStepResult(worktreeFeaturesForSteps),
+    [worktreeFeaturesForSteps]
+  );
+
   // Build columnFeaturesMap for ListView
   // pipelineConfig is now from usePipelineConfig React Query hook at the top
   const columnFeaturesMap = useMemo(() => {
@@ -1402,6 +1433,9 @@ export function BoardView() {
               isSelectionMode={isSelectionMode}
               selectedFeatureIds={selectedFeatureIds}
               onToggleFeatureSelection={toggleFeatureSelection}
+              selectionTarget={selectionTarget}
+              onToggleSelectionMode={toggleSelectionMode}
+              stepMap={backlogStepMap}
               onRowClick={(feature) => {
                 if (feature.status === 'backlog') {
                   setEditingFeature(feature);
@@ -1415,6 +1449,7 @@ export function BoardView() {
             <KanbanBoard
               activeFeature={activeFeature}
               getColumnFeatures={getColumnFeatures}
+              stepMap={backlogStepMap}
               backgroundImageStyle={backgroundImageStyle}
               backgroundSettings={backgroundSettings}
               onEdit={(feature) => setEditingFeature(feature)}

@@ -51,9 +51,13 @@ export const CardBadges = memo(function CardBadges({ feature }: CardBadgesProps)
 
 interface PriorityBadgesProps {
   feature: Feature;
+  stepIndex?: number;
 }
 
-export const PriorityBadges = memo(function PriorityBadges({ feature }: PriorityBadgesProps) {
+export const PriorityBadges = memo(function PriorityBadges({
+  feature,
+  stepIndex,
+}: PriorityBadgesProps) {
   const { enableDependencyBlocking, features } = useAppStore(
     useShallow((state) => ({
       enableDependencyBlocking: state.enableDependencyBlocking,
@@ -108,7 +112,9 @@ export const PriorityBadges = memo(function PriorityBadges({ feature }: Priority
   const showManualVerification =
     feature.skipTests && !feature.error && feature.status === 'backlog';
 
-  const showBadges = feature.priority || showManualVerification || isBlocked || isJustFinished;
+  const showStep = feature.status === 'backlog' && stepIndex !== undefined;
+  const showBadges =
+    showStep || feature.priority || showManualVerification || isBlocked || isJustFinished;
 
   if (!showBadges) {
     return null;
@@ -116,6 +122,25 @@ export const PriorityBadges = memo(function PriorityBadges({ feature }: Priority
 
   return (
     <div className="absolute top-2 left-2 flex items-center gap-1">
+      {/* Step badge */}
+      {showStep && (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={cn(uniformBadgeClass, 'bg-muted/80 border-border text-foreground')}
+                data-testid={`step-badge-${feature.id}`}
+              >
+                <span className="font-bold text-[10px]">S{stepIndex}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              <p>Step {stepIndex}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+
       {/* Priority badge */}
       {feature.priority && (
         <TooltipProvider delayDuration={200}>

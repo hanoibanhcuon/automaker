@@ -26,12 +26,36 @@ interface ColumnDef {
  */
 export const LIST_COLUMNS: ColumnDef[] = [
   {
+    id: 'step',
+    label: 'Step',
+    sortable: true,
+    width: 'w-16',
+    minWidth: 'min-w-[56px]',
+    align: 'center',
+  },
+  {
     id: 'title',
     label: 'Title',
     sortable: true,
     width: 'flex-1',
     minWidth: 'min-w-0',
     align: 'left',
+  },
+  {
+    id: 'model',
+    label: 'Provider / Model',
+    sortable: true,
+    width: 'w-[360px]',
+    minWidth: 'min-w-[300px]',
+    align: 'left',
+  },
+  {
+    id: 'planning',
+    label: 'Planning',
+    sortable: true,
+    width: 'w-24',
+    minWidth: 'min-w-[96px]',
+    align: 'center',
   },
   {
     id: 'priority',

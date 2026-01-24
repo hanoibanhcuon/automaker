@@ -21,14 +21,14 @@ function isENOENT(error: unknown): boolean {
 
 export function createReadHandler() {
   return async (req: Request, res: Response): Promise<void> => {
+    const { filePath } = req.body as { filePath: string };
+
+    if (!filePath) {
+      res.status(400).json({ success: false, error: 'filePath is required' });
+      return;
+    }
+
     try {
-      const { filePath } = req.body as { filePath: string };
-
-      if (!filePath) {
-        res.status(400).json({ success: false, error: 'filePath is required' });
-        return;
-      }
-
       const content = await secureFs.readFile(filePath, 'utf-8');
 
       res.json({ success: true, content });
@@ -39,8 +39,13 @@ export function createReadHandler() {
         return;
       }
 
+      if (isENOENT(error) && isOptionalFile(filePath)) {
+        res.json({ success: false, error: 'File not found' });
+        return;
+      }
+
       // Don't log ENOENT errors for optional files (expected to be missing in new projects)
-      const shouldLog = !(isENOENT(error) && isOptionalFile(req.body?.filePath || ''));
+      const shouldLog = !(isENOENT(error) && isOptionalFile(filePath));
       if (shouldLog) {
         logError(error, 'Read file failed');
       }

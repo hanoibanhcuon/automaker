@@ -6,7 +6,7 @@
 import path from 'path';
 import * as secureFs from '../lib/secure-fs.js';
 import type { EventEmitter } from '../lib/events.js';
-import type { Feature, ExecuteOptions } from '@automaker/types';
+import type { Feature, ExecuteOptions, ThinkingLevel } from '@automaker/types';
 import type {
   Idea,
   IdeaCategory,
@@ -39,9 +39,14 @@ import { ProviderFactory } from '../providers/provider-factory.js';
 import type { SettingsService } from './settings-service.js';
 import type { FeatureLoader } from './feature-loader.js';
 import { createChatOptions, validateWorkingDirectory } from '../lib/sdk-options.js';
-import { resolveModelString } from '@automaker/model-resolver';
+import { resolveModelString, resolvePhaseModel } from '@automaker/model-resolver';
 import { stripProviderPrefix } from '@automaker/types';
-import { getPromptCustomization, getProviderByModelId } from '../lib/settings-helpers.js';
+import {
+  getPromptCustomization,
+  getProviderByModelId,
+  getPhaseModelWithOverrides,
+} from '../lib/settings-helpers.js';
+import { DEFAULT_PHASE_MODELS } from '@automaker/types';
 
 const logger = createLogger('IdeationService');
 
@@ -680,24 +685,44 @@ export class IdeationService {
         existingWorkContext
       );
 
-      // Resolve model alias to canonical identifier (with prefix)
-      const modelId = resolveModelString('sonnet');
+      // Resolve model from phase settings (AI Suggestions) with provider info
+      let modelId: string;
+      let thinkingLevel: ThinkingLevel | undefined;
+      let claudeCompatibleProvider: import('@automaker/types').ClaudeCompatibleProvider | undefined;
+      let credentials = await this.settingsService?.getCredentials();
+
+      if (this.settingsService) {
+        const phaseResult = await getPhaseModelWithOverrides(
+          'suggestionsModel',
+          this.settingsService,
+          projectPath,
+          '[IdeationService]'
+        );
+        const resolved = resolvePhaseModel(phaseResult.phaseModel);
+        modelId = resolved.model;
+        thinkingLevel = resolved.thinkingLevel;
+        claudeCompatibleProvider = phaseResult.provider;
+        credentials = phaseResult.credentials ?? credentials;
+      } else {
+        const resolved = resolvePhaseModel(DEFAULT_PHASE_MODELS.suggestionsModel);
+        modelId = resolved.model;
+        thinkingLevel = resolved.thinkingLevel;
+      }
 
       // Create SDK options
+      const abortController = new AbortController();
       const sdkOptions = createChatOptions({
         cwd: projectPath,
         model: modelId,
         systemPrompt,
-        abortController: new AbortController(),
+        abortController,
+        thinkingLevel,
       });
 
       const provider = ProviderFactory.getProviderForModel(modelId);
 
       // Strip provider prefix - providers need bare model IDs
       const bareModel = stripProviderPrefix(modelId);
-
-      // Get credentials for API calls (uses hardcoded model, no phase setting)
-      const credentials = await this.settingsService?.getCredentials();
 
       const executeOptions: ExecuteOptions = {
         prompt: prompt.prompt,
@@ -708,7 +733,9 @@ export class IdeationService {
         maxTurns: 1,
         // Disable all tools - we just want text generation, not codebase analysis
         allowedTools: [],
-        abortController: new AbortController(),
+        abortController,
+        thinkingLevel, // Pass thinking level for extended thinking
+        claudeCompatibleProvider, // Pass provider for alternative endpoint configuration
         credentials, // Pass credentials for resolving 'credentials' apiKeySource
       };
 

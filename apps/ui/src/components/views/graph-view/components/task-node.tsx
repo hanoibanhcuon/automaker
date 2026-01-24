@@ -166,10 +166,24 @@ export const TaskNode = memo(function TaskNode({ data, selected }: TaskNodeProps
           <div className={cn('relative flex items-center gap-2 px-2.5 py-2', config.bgClass)}>
             <StatusIcon className={cn('w-3.5 h-3.5', config.colorClass)} />
             <span className={cn('text-[11px] font-medium', config.colorClass)}>{config.label}</span>
+            {status === 'backlog' && data.stepIndex && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-muted/80 text-foreground">
+                      S{data.stepIndex}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    <p>Step {data.stepIndex}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             {priorityConf && (
               <span
                 className={cn(
-                  'ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded',
+                  'text-[9px] font-bold px-1.5 py-0.5 rounded',
                   priorityConf.colorClass
                 )}
               >
@@ -272,6 +286,20 @@ export const TaskNode = memo(function TaskNode({ data, selected }: TaskNodeProps
           </div>
 
           <div className="flex items-center gap-1">
+            {status === 'backlog' && data.stepIndex && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted/80 text-foreground">
+                      S{data.stepIndex}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    <p>Step {data.stepIndex}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             {/* Priority badge */}
             {priorityConf && (
               <span

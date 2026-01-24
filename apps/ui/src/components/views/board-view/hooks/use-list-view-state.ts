@@ -6,7 +6,16 @@ import type { ViewMode } from '../components/view-toggle';
 export type { ViewMode };
 
 /** Columns that can be sorted in the list view */
-export type SortColumn = 'title' | 'status' | 'category' | 'priority' | 'createdAt' | 'updatedAt';
+export type SortColumn =
+  | 'step'
+  | 'title'
+  | 'status'
+  | 'category'
+  | 'model'
+  | 'planning'
+  | 'priority'
+  | 'createdAt'
+  | 'updatedAt';
 
 /** Sort direction */
 export type SortDirection = 'asc' | 'desc';
@@ -28,8 +37,8 @@ const STORAGE_KEY = 'automaker:list-view-state';
 
 /** Default sort configuration */
 const DEFAULT_SORT_CONFIG: SortConfig = {
-  column: 'createdAt',
-  direction: 'desc',
+  column: 'step',
+  direction: 'asc',
 };
 
 /** Default persisted state */
@@ -53,9 +62,12 @@ function validateViewMode(value: unknown): ViewMode {
  */
 function validateSortColumn(value: unknown): SortColumn {
   const validColumns: SortColumn[] = [
+    'step',
     'title',
     'status',
     'category',
+    'model',
+    'planning',
     'priority',
     'createdAt',
     'updatedAt',

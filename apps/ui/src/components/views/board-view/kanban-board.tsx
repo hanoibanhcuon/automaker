@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 interface KanbanBoardProps {
   activeFeature: Feature | null;
   getColumnFeatures: (columnId: ColumnId) => Feature[];
+  stepMap: Record<string, number>;
   backgroundImageStyle: React.CSSProperties;
   backgroundSettings: {
     columnOpacity: number;
@@ -264,6 +265,7 @@ function VirtualizedList<Item extends VirtualListItem>({
 export function KanbanBoard({
   activeFeature,
   getColumnFeatures,
+  stepMap,
   backgroundImageStyle,
   backgroundSettings,
   onEdit,
@@ -541,6 +543,11 @@ export function KanbanBoard({
                                   >
                                     <KanbanCard
                                       feature={feature}
+                                      stepIndex={
+                                        feature.status === 'backlog'
+                                          ? stepMap[feature.id]
+                                          : undefined
+                                      }
                                       onEdit={() => onEdit(feature)}
                                       onDelete={() => onDelete(feature.id)}
                                       onViewOutput={() => onViewOutput(feature)}
@@ -583,6 +590,9 @@ export function KanbanBoard({
                               <KanbanCard
                                 key={feature.id}
                                 feature={feature}
+                                stepIndex={
+                                  feature.status === 'backlog' ? stepMap[feature.id] : undefined
+                                }
                                 onEdit={() => onEdit(feature)}
                                 onDelete={() => onDelete(feature.id)}
                                 onViewOutput={() => onViewOutput(feature)}
@@ -633,6 +643,7 @@ export function KanbanBoard({
           <div style={{ width: `${columnWidth}px` }}>
             <KanbanCard
               feature={activeFeature}
+              stepIndex={activeFeature.status === 'backlog' ? stepMap[activeFeature.id] : undefined}
               isOverlay
               onEdit={() => {}}
               onDelete={() => {}}

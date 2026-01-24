@@ -17,6 +17,8 @@ interface TaskInfo {
   status: 'pending' | 'in_progress' | 'completed';
   filePath?: string;
   phase?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 interface TaskProgressPanelProps {
@@ -76,6 +78,8 @@ export function TaskProgressPanel({
             filePath: t.filePath,
             phase: t.phase,
             status: t.status || fallbackStatus,
+            startedAt: t.startedAt,
+            completedAt: t.completedAt,
           };
         });
 
@@ -133,7 +137,11 @@ export function TaskProgressPanel({
                 // Update status to in_progress and mark previous as completed
                 return prev.map((t, idx) => {
                   if (t.id === taskEvent.taskId) {
-                    return { ...t, status: 'in_progress' as const };
+                    return {
+                      ...t,
+                      status: 'in_progress' as const,
+                      startedAt: t.startedAt ?? new Date().toISOString(),
+                    };
                   }
                   // If we are moving to a task that is further down the list, assume previous ones are completed
                   // This is a heuristic, but usually correct for sequential execution
@@ -151,6 +159,7 @@ export function TaskProgressPanel({
                   id: taskEvent.taskId,
                   description: taskEvent.taskDescription,
                   status: 'in_progress' as const,
+                  startedAt: new Date().toISOString(),
                 },
               ];
             });
@@ -162,7 +171,13 @@ export function TaskProgressPanel({
             const taskEvent = event as Extract<AutoModeEvent, { type: 'auto_mode_task_complete' }>;
             setTasks((prev) =>
               prev.map((t) =>
-                t.id === taskEvent.taskId ? { ...t, status: 'completed' as const } : t
+                t.id === taskEvent.taskId
+                  ? {
+                      ...t,
+                      status: 'completed' as const,
+                      completedAt: t.completedAt ?? new Date().toISOString(),
+                    }
+                  : t
               )
             );
             setCurrentTaskId(null);
@@ -181,6 +196,17 @@ export function TaskProgressPanel({
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
   const totalCount = tasks.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const formatDuration = (ms?: number | null): string => {
+    if (!ms || ms <= 0) return '';
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m`;
+    return `${seconds}s`;
+  };
 
   if (isLoading || tasks.length === 0) {
     return null;
@@ -279,6 +305,16 @@ export function TaskProgressPanel({
                 const isActive = task.status === 'in_progress';
                 const isCompleted = task.status === 'completed';
                 const isPending = task.status === 'pending';
+                const startTime = task.startedAt ? new Date(task.startedAt).getTime() : null;
+                const endTime = task.completedAt
+                  ? new Date(task.completedAt).getTime()
+                  : isActive
+                    ? Date.now()
+                    : null;
+                const durationMs =
+                  startTime && endTime && endTime >= startTime ? endTime - startTime : null;
+                const durationLabel =
+                  durationMs && durationMs > 0 ? formatDuration(durationMs) : null;
 
                 return (
                   <div
@@ -323,6 +359,20 @@ export function TaskProgressPanel({
                           >
                             {task.description}
                           </p>
+                          {durationLabel && (
+                            <span
+                              className="text-[10px] text-muted-foreground whitespace-nowrap"
+                              title={
+                                task.startedAt && task.completedAt
+                                  ? `${new Date(task.startedAt).toLocaleString()} - ${new Date(
+                                      task.completedAt
+                                    ).toLocaleString()}`
+                                  : undefined
+                              }
+                            >
+                              {durationLabel}
+                            </span>
+                          )}
                           {isActive && (
                             <Badge
                               variant="outline"

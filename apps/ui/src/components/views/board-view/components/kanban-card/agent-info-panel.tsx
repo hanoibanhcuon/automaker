@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useMemo } from 'react';
+import { memo, useEffect, useState, useMemo, useRef } from 'react';
 import { Feature, ThinkingLevel, ParsedTask } from '@/store/app-store';
 import type { ReasoningEffort } from '@automaker/types';
 import { getProviderFromModel } from '@/lib/utils';
@@ -66,6 +66,8 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
   const [isSummaryDialogOpen, setIsSummaryDialogOpen] = useState(false);
   const [isTodosExpanded, setIsTodosExpanded] = useState(false);
   const [livePhase, setLivePhase] = useState<string | null>(null);
+  const [phaseStartedAt, setPhaseStartedAt] = useState<number | null>(null);
+  const lastPhaseRef = useRef<string | null>(null);
   // Track real-time task status updates from WebSocket events
   const [taskStatusMap, setTaskStatusMap] = useState<
     Map<string, 'pending' | 'in_progress' | 'completed'>
@@ -178,18 +180,34 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
       switch (event.type) {
         case 'auto_mode_phase':
           if ('phase' in event && event.phase) {
+            if (lastPhaseRef.current !== event.phase) {
+              lastPhaseRef.current = event.phase;
+              setPhaseStartedAt(Date.now());
+            }
             setLivePhase(event.phase);
           }
           break;
         case 'planning_started':
         case 'plan_revision_requested':
+          if (lastPhaseRef.current !== 'planning') {
+            lastPhaseRef.current = 'planning';
+            setPhaseStartedAt(Date.now());
+          }
           setLivePhase('planning');
           break;
         case 'plan_approved':
         case 'plan_auto_approved':
+          if (lastPhaseRef.current !== 'action') {
+            lastPhaseRef.current = 'action';
+            setPhaseStartedAt(Date.now());
+          }
           setLivePhase('action');
           break;
         case 'plan_approval_required':
+          if (lastPhaseRef.current !== 'planning') {
+            lastPhaseRef.current = 'planning';
+            setPhaseStartedAt(Date.now());
+          }
           setLivePhase('planning');
           break;
         case 'auto_mode_task_started':
@@ -222,7 +240,117 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
 
   useEffect(() => {
     setLivePhase(null);
+    setPhaseStartedAt(null);
+    lastPhaseRef.current = null;
   }, [feature.id]);
+
+  const formatDuration = (ms?: number | null): string => {
+    if (!ms || ms <= 0) return '';
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m`;
+    return `${seconds}s`;
+  };
+
+  const timeStats = useMemo(() => {
+    const planTasks = (freshPlanSpec?.tasks || feature.planSpec?.tasks || []) as ParsedTask[];
+    const now = Date.now();
+    const taskStartTimes = planTasks
+      .map((t) => (t.startedAt ? new Date(t.startedAt).getTime() : null))
+      .filter((t): t is number => t !== null);
+    const taskEndTimes = planTasks
+      .map((t) => (t.completedAt ? new Date(t.completedAt).getTime() : null))
+      .filter((t): t is number => t !== null);
+
+    const featureStart =
+      taskStartTimes.length > 0
+        ? Math.min(...taskStartTimes)
+        : feature.startedAt
+          ? new Date(feature.startedAt).getTime()
+          : null;
+
+    const featureEnd =
+      feature.status === 'in_progress'
+        ? now
+        : taskEndTimes.length > 0
+          ? Math.max(...taskEndTimes)
+          : feature.justFinishedAt
+            ? new Date(feature.justFinishedAt).getTime()
+            : (feature as any)?.updatedAt
+              ? new Date((feature as any).updatedAt).getTime()
+              : null;
+
+    const totalDuration =
+      featureStart && featureEnd && featureEnd >= featureStart ? featureEnd - featureStart : null;
+
+    const activeDuration = planTasks.reduce((sum, task) => {
+      if (!task.startedAt) return sum;
+      const start = new Date(task.startedAt).getTime();
+      const end = task.completedAt
+        ? new Date(task.completedAt).getTime()
+        : task.status === 'in_progress'
+          ? now
+          : null;
+      if (!end || end < start) return sum;
+      return sum + (end - start);
+    }, 0);
+
+    const currentTaskId = freshPlanSpec?.currentTaskId ?? feature.planSpec?.currentTaskId;
+    const currentTask = currentTaskId ? planTasks.find((t) => t.id === currentTaskId) : null;
+    const phaseLabel = currentTask?.phase || livePhase || agentInfo?.currentPhase || null;
+
+    let phaseDuration: number | null = null;
+    if (currentTask?.phase) {
+      const phaseTasks = planTasks.filter((t) => t.phase === currentTask.phase);
+      const phaseStarts = phaseTasks
+        .map((t) => (t.startedAt ? new Date(t.startedAt).getTime() : null))
+        .filter((t): t is number => t !== null);
+      const phaseEnds = phaseTasks
+        .map((t) => (t.completedAt ? new Date(t.completedAt).getTime() : null))
+        .filter((t): t is number => t !== null);
+      const phaseStart = phaseStarts.length > 0 ? Math.min(...phaseStarts) : null;
+      const phaseEnd =
+        phaseTasks.some((t) => t.status === 'in_progress') || feature.status === 'in_progress'
+          ? now
+          : phaseEnds.length > 0
+            ? Math.max(...phaseEnds)
+            : null;
+      if (phaseStart && phaseEnd && phaseEnd >= phaseStart) {
+        phaseDuration = phaseEnd - phaseStart;
+      }
+    } else if (phaseStartedAt) {
+      phaseDuration = now - phaseStartedAt;
+    }
+
+    const fileTasks = planTasks.filter((t) => !!t.filePath);
+    const completedFileTasks = fileTasks.filter((t) => t.status === 'completed');
+
+    return {
+      totalDuration,
+      activeDuration: activeDuration > 0 ? activeDuration : null,
+      phaseLabel,
+      phaseDuration,
+      toolCalls: agentInfo?.toolCallCount ?? 0,
+      fileTaskTotal: fileTasks.length,
+      fileTaskCompleted: completedFileTasks.length,
+    };
+  }, [
+    freshPlanSpec?.tasks,
+    freshPlanSpec?.currentTaskId,
+    feature.planSpec?.tasks,
+    feature.planSpec?.currentTaskId,
+    feature.startedAt,
+    feature.justFinishedAt,
+    feature.status,
+    livePhase,
+    phaseStartedAt,
+    agentInfo?.currentPhase,
+    agentInfo?.toolCallCount,
+    feature,
+  ]);
 
   // Model/Preset Info for Backlog Cards
   if (feature.status === 'backlog') {
@@ -293,6 +421,41 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
               </div>
             )}
           </div>
+
+          {(timeStats.totalDuration || timeStats.activeDuration || timeStats.phaseDuration) && (
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+              {timeStats.activeDuration && (
+                <span className="px-1.5 py-0.5 rounded-md bg-muted/40">
+                  Active: {formatDuration(timeStats.activeDuration)}
+                </span>
+              )}
+              {timeStats.totalDuration && (
+                <span className="px-1.5 py-0.5 rounded-md bg-muted/40">
+                  Total: {formatDuration(timeStats.totalDuration)}
+                </span>
+              )}
+              {timeStats.phaseDuration && timeStats.phaseLabel && (
+                <span className="px-1.5 py-0.5 rounded-md bg-muted/40">
+                  {timeStats.phaseLabel}: {formatDuration(timeStats.phaseDuration)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {(timeStats.toolCalls > 0 || timeStats.fileTaskTotal > 0) && (
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+              {timeStats.toolCalls > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-muted/30">
+                  Tools: {timeStats.toolCalls}
+                </span>
+              )}
+              {timeStats.fileTaskTotal > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-muted/30">
+                  Files: {timeStats.fileTaskCompleted}/{timeStats.fileTaskTotal}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Task List Progress */}
           {effectiveTodos.length > 0 && (

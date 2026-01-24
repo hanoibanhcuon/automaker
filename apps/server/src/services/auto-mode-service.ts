@@ -2482,24 +2482,34 @@ Format your response as a structured markdown document.`;
    * @param projectPath - The project path
    * @param branchName - The branch name, or null for main worktree
    */
-  getStatusForProject(
+  async getStatusForProject(
     projectPath: string,
     branchName: string | null = null
-  ): {
+  ): Promise<{
     isAutoLoopRunning: boolean;
     runningFeatures: string[];
     runningCount: number;
     maxConcurrency: number;
     branchName: string | null;
-  } {
+  }> {
     const worktreeKey = getWorktreeAutoLoopKey(projectPath, branchName);
     const projectState = this.autoLoopsByProject.get(worktreeKey);
     const runningFeatures: string[] = [];
+    const primaryBranch = branchName === null ? await getCurrentBranch(projectPath) : null;
 
     for (const [featureId, feature] of this.runningFeatures) {
       // Filter by project path AND branchName to get worktree-specific features
-      if (feature.projectPath === projectPath && feature.branchName === branchName) {
-        runningFeatures.push(featureId);
+      if (feature.projectPath === projectPath) {
+        const featureBranch = feature.branchName ?? null;
+        if (branchName === null) {
+          const isPrimaryBranch =
+            featureBranch === null || (primaryBranch && featureBranch === primaryBranch);
+          if (isPrimaryBranch) {
+            runningFeatures.push(featureId);
+          }
+        } else if (featureBranch === branchName) {
+          runningFeatures.push(featureId);
+        }
       }
     }
 

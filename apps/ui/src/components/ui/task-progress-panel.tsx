@@ -37,6 +37,7 @@ export function TaskProgressPanel({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLoading, setIsLoading] = useState(true);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
 
   // Load initial tasks from feature's planSpec
   const loadInitialTasks = useCallback(async () => {
@@ -103,6 +104,22 @@ export function TaskProgressPanel({
       if (!('featureId' in event) || event.featureId !== featureId) return;
 
       switch (event.type) {
+        case 'auto_mode_phase':
+          if ('phase' in event && event.phase) {
+            setCurrentPhase(event.phase);
+          }
+          break;
+        case 'planning_started':
+        case 'plan_revision_requested':
+          setCurrentPhase('planning');
+          break;
+        case 'plan_approved':
+        case 'plan_auto_approved':
+          setCurrentPhase('action');
+          break;
+        case 'plan_approval_required':
+          setCurrentPhase('planning');
+          break;
         case 'auto_mode_task_started':
           if ('taskId' in event && 'taskDescription' in event) {
             const taskEvent = event as Extract<AutoModeEvent, { type: 'auto_mode_task_started' }>;
@@ -157,6 +174,10 @@ export function TaskProgressPanel({
     return unsubscribe;
   }, [featureId]);
 
+  useEffect(() => {
+    setCurrentPhase(null);
+  }, [featureId]);
+
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
   const totalCount = tasks.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -194,6 +215,20 @@ export function TaskProgressPanel({
             <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
               {completedCount} of {totalCount} tasks completed
             </span>
+            {(currentPhase || currentTaskId) && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {currentPhase && (
+                  <Badge variant="secondary" className="h-5 px-2 text-[10px]">
+                    Phase: {currentPhase}
+                  </Badge>
+                )}
+                {currentTaskId && (
+                  <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                    Active: {currentTaskId}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

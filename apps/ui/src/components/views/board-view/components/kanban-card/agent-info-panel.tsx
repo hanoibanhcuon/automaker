@@ -65,6 +65,7 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
 }: AgentInfoPanelProps) {
   const [isSummaryDialogOpen, setIsSummaryDialogOpen] = useState(false);
   const [isTodosExpanded, setIsTodosExpanded] = useState(false);
+  const [livePhase, setLivePhase] = useState<string | null>(null);
   // Track real-time task status updates from WebSocket events
   const [taskStatusMap, setTaskStatusMap] = useState<
     Map<string, 'pending' | 'in_progress' | 'completed'>
@@ -175,6 +176,22 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
       if (!('featureId' in event) || event.featureId !== feature.id) return;
 
       switch (event.type) {
+        case 'auto_mode_phase':
+          if ('phase' in event && event.phase) {
+            setLivePhase(event.phase);
+          }
+          break;
+        case 'planning_started':
+        case 'plan_revision_requested':
+          setLivePhase('planning');
+          break;
+        case 'plan_approved':
+        case 'plan_auto_approved':
+          setLivePhase('action');
+          break;
+        case 'plan_approval_required':
+          setLivePhase('planning');
+          break;
         case 'auto_mode_task_started':
           if ('taskId' in event) {
             const taskEvent = event as Extract<AutoModeEvent, { type: 'auto_mode_task_started' }>;
@@ -202,6 +219,10 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
 
     return unsubscribe;
   }, [feature.id, shouldListenToEvents]);
+
+  useEffect(() => {
+    setLivePhase(null);
+  }, [feature.id]);
 
   // Model/Preset Info for Backlog Cards
   if (feature.status === 'backlog') {
@@ -256,19 +277,19 @@ export const AgentInfoPanel = memo(function AgentInfoPanel({
               })()}
               <span className="font-medium">{formatModelName(feature.model ?? DEFAULT_MODEL)}</span>
             </div>
-            {agentInfo?.currentPhase && (
+            {(livePhase || agentInfo?.currentPhase) && (
               <div
                 className={cn(
                   'px-1.5 py-0.5 rounded-md text-[10px] font-medium',
-                  agentInfo.currentPhase === 'planning' &&
+                  (livePhase ?? agentInfo?.currentPhase) === 'planning' &&
                     'bg-[var(--status-info-bg)] text-[var(--status-info)]',
-                  agentInfo.currentPhase === 'action' &&
+                  (livePhase ?? agentInfo?.currentPhase) === 'action' &&
                     'bg-[var(--status-warning-bg)] text-[var(--status-warning)]',
-                  agentInfo.currentPhase === 'verification' &&
+                  (livePhase ?? agentInfo?.currentPhase) === 'verification' &&
                     'bg-[var(--status-success-bg)] text-[var(--status-success)]'
                 )}
               >
-                {agentInfo.currentPhase}
+                {livePhase ?? agentInfo?.currentPhase}
               </div>
             )}
           </div>

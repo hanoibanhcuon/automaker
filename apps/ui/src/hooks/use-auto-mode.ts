@@ -153,8 +153,14 @@ export function useAutoMode(worktree?: WorktreeInfo) {
         const result = await api.autoMode.status(currentProject.path, branchName);
         if (result.success && result.isAutoLoopRunning !== undefined) {
           const backendIsRunning = result.isAutoLoopRunning;
+          const backendRunningFeatures = Array.isArray(result.runningFeatures)
+            ? result.runningFeatures
+            : [];
+          const runningFeaturesChanged =
+            backendRunningFeatures.slice().sort().join('|') !==
+            runningAutoTasks.slice().sort().join('|');
 
-          if (backendIsRunning !== isAutoModeRunning) {
+          if (backendIsRunning !== isAutoModeRunning || runningFeaturesChanged) {
             const worktreeDesc = branchName ? `worktree ${branchName}` : 'main worktree';
             logger.info(
               `[AutoMode] Syncing UI state with backend for ${worktreeDesc} in ${currentProject.path}: ${backendIsRunning ? 'ON' : 'OFF'}`
@@ -164,7 +170,7 @@ export function useAutoMode(worktree?: WorktreeInfo) {
               branchName,
               backendIsRunning,
               result.maxConcurrency,
-              result.runningFeatures
+              backendRunningFeatures
             );
             setAutoModeSessionForWorktree(currentProject.path, branchName, backendIsRunning);
           }
@@ -175,7 +181,7 @@ export function useAutoMode(worktree?: WorktreeInfo) {
     };
 
     syncWithBackend();
-  }, [currentProject, branchName, setAutoModeRunning]);
+  }, [currentProject, branchName, setAutoModeRunning, isAutoModeRunning, runningAutoTasks]);
 
   // Handle auto mode events - listen globally for all projects/worktrees
   useEffect(() => {

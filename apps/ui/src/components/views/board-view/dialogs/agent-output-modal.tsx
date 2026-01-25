@@ -107,6 +107,8 @@ export function AgentOutputModal({
       (agent) => agent.featureId === featureId && agent.projectPath === resolvedProjectPath
     );
   }, [runningAgentsData?.agents, featureId, resolvedProjectPath]);
+  const isAgentActive = isFeatureRunning || featureStatus === 'running';
+  const shouldPollOutput = Boolean(open && (isBacklogPlan || isAgentActive));
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       if (!isDraggingRef.current || !layoutRef.current) return;
@@ -133,8 +135,13 @@ export function AgentOutputModal({
   }, []);
 
   // Use React Query for initial output loading
-  const { data: initialOutput = '', isLoading } = useAgentOutput(resolvedProjectPath, featureId, {
+  const {
+    data: initialOutput = '',
+    isLoading,
+    isFetching: isOutputFetching,
+  } = useAgentOutput(resolvedProjectPath, featureId, {
     enabled: open && !!resolvedProjectPath,
+    pollingInterval: shouldPollOutput ? 3000 : false,
   });
   const { data: featureData } = useFeature(resolvedProjectPath, featureId, {
     enabled: open && !!resolvedProjectPath && !isBacklogPlan,
@@ -1156,8 +1163,44 @@ export function AgentOutputModal({
                       Loading output...
                     </div>
                   ) : !output ? (
-                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                      No output yet. The agent will stream output here as it works.
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-3">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span
+                          className={cn(
+                            'h-2 w-2 rounded-full',
+                            isAgentActive
+                              ? 'bg-emerald-400 animate-pulse'
+                              : 'bg-muted-foreground/60'
+                          )}
+                        />
+                        <span>
+                          {isAgentActive ? 'Agent is running' : 'No running agent detected'}
+                        </span>
+                        {isOutputFetching && <Spinner size="xs" className="ml-1" />}
+                      </div>
+                      <div className="max-w-md text-center text-xs text-muted-foreground">
+                        {isBacklogPlan
+                          ? 'Backlog planning may not stream output immediately. Output will appear after the first planning step.'
+                          : 'No output yet. The agent will stream output here as it works.'}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            queryClient.invalidateQueries({
+                              queryKey: queryKeys.features.agentOutput(
+                                resolvedProjectPath,
+                                featureId
+                              ),
+                            })
+                          }
+                          disabled={!resolvedProjectPath || !featureId}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                          Refresh output
+                        </Button>
+                      </div>
                     </div>
                   ) : effectiveViewMode === 'parsed' ? (
                     <LogViewer output={output} />

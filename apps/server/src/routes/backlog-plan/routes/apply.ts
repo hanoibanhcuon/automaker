@@ -6,10 +6,42 @@ import type { Request, Response } from 'express';
 import type { BacklogPlanResult, BacklogChange, Feature } from '@automaker/types';
 import { FeatureLoader } from '../../../services/feature-loader.js';
 import { clearBacklogPlan, getErrorMessage, logError, logger } from '../common.js';
+import type { SettingsService } from '../../../services/settings-service.js';
 
 const featureLoader = new FeatureLoader();
 
-export function createApplyHandler() {
+const FOUNDATION_KEYWORDS = [
+  'tai lieu',
+  'tài liệu',
+  'dac ta',
+  'đặc tả',
+  'spec',
+  'yeu cau',
+  'yêu cầu',
+  'phan tich',
+  'phân tích',
+  'thiet ke',
+  'thiết kế',
+  'kien truc',
+  'kiến trúc',
+  'architecture',
+  'database',
+  'co so du lieu',
+  'cơ sở dữ liệu',
+  'schema',
+  'data model',
+];
+
+function normalizeText(input?: string): string {
+  return (input || '').toLowerCase();
+}
+
+function isFoundationFeature(feature: Partial<Feature>): boolean {
+  const text = `${normalizeText(feature.title)} ${normalizeText(feature.description)}`;
+  return FOUNDATION_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+export function createApplyHandler(settingsService?: SettingsService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -40,9 +72,14 @@ export function createApplyHandler() {
 
       const appliedChanges: string[] = [];
 
+      const globalSettings = settingsService ? await settingsService.getGlobalSettings() : null;
+      const defaultPlanningMode = globalSettings?.defaultPlanningMode ?? 'skip';
+      const defaultRequirePlanApproval = globalSettings?.defaultRequirePlanApproval ?? false;
+
       // Load current features for dependency validation
       const allFeatures = await featureLoader.getAll(projectPath);
       const featureMap = new Map(allFeatures.map((f) => [f.id, f]));
+      const existingIds = new Set(allFeatures.map((f) => f.id));
 
       // Process changes in order: deletes first, then adds, then updates
       // This ensures we can remove dependencies before they cause issues
@@ -81,25 +118,58 @@ export function createApplyHandler() {
 
       // 2. Second pass: Handle adds
       const additions = plan.changes.filter((c) => c.type === 'add');
+      const additionIds = additions
+        .map((change) => change.feature?.id)
+        .filter((id): id is string => Boolean(id && id.trim().length > 0));
+      const foundationIds = additions
+        .filter((change) => change.feature && isFoundationFeature(change.feature))
+        .map((change) => change.feature?.id)
+        .filter((id): id is string => Boolean(id && id.trim().length > 0));
+      const effectiveFoundationIds =
+        foundationIds.length > 0 ? foundationIds : additionIds.slice(0, 1);
+
+      const resolveDependencies = (feature: Partial<Feature>): string[] => {
+        const rawDeps = Array.isArray(feature.dependencies) ? feature.dependencies : [];
+        const validDeps = rawDeps.filter(
+          (dep) => existingIds.has(dep) || additionIds.includes(dep)
+        );
+        if (validDeps.length > 0) return validDeps;
+        if (isFoundationFeature(feature)) return [];
+        return effectiveFoundationIds.filter((dep) => dep && dep !== feature.id);
+      };
+
       for (const change of additions) {
         if (!change.feature) continue;
 
         try {
+          const resolvedDependencies = resolveDependencies(change.feature);
           // Create the new feature - use the AI-generated ID if provided
           const newFeature = await featureLoader.create(projectPath, {
             id: change.feature.id, // Use descriptive ID from AI if provided
             title: change.feature.title,
             description: change.feature.description || '',
             category: change.feature.category || 'Uncategorized',
-            dependencies: change.feature.dependencies,
+            dependencies: resolvedDependencies,
             priority: change.feature.priority,
             status: 'backlog',
             branchName,
+            planningMode: change.feature.planningMode ?? defaultPlanningMode,
+            requirePlanApproval: change.feature.requirePlanApproval ?? defaultRequirePlanApproval,
           });
 
           appliedChanges.push(`added:${newFeature.id}`);
           featureMap.set(newFeature.id, newFeature);
           logger.info(`[BacklogPlan] Created feature ${newFeature.id}: ${newFeature.title}`);
+          if (
+            (!change.feature.dependencies || change.feature.dependencies.length === 0) &&
+            resolvedDependencies.length > 0
+          ) {
+            logger.info(
+              `[BacklogPlan] Auto-enforced dependencies for ${newFeature.id}: ${resolvedDependencies.join(
+                ', '
+              )}`
+            );
+          }
         } catch (error) {
           logger.error(`[BacklogPlan] Failed to add feature:`, getErrorMessage(error));
         }

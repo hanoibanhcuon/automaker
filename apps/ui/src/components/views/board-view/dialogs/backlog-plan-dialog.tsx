@@ -279,8 +279,8 @@ export function BacklogPlanDialog({
               autoFocus
             />
             <div className="text-xs text-muted-foreground">
-              The AI will automatically handle dependency graph updates when adding or removing
-              features.
+              Dependency chains are required for new features. Missing dependencies will be
+              auto-enforced on the server to keep a clear execution order.
             </div>
             {isGeneratingPlan && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
@@ -305,6 +305,10 @@ export function BacklogPlanDialog({
             <div className="rounded-lg border bg-muted/30 p-4">
               <h4 className="font-medium mb-2">Summary</h4>
               <p className="text-sm text-muted-foreground">{pendingPlanResult.summary}</p>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Dependency chains are required for new features. If any additions are missing
+              dependencies, the server will auto-enforce a safe ordering during apply.
             </div>
 
             {/* Stats */}

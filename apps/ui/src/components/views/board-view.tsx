@@ -1432,6 +1432,7 @@ export function BoardView() {
               runningAutoTasks={runningAutoTasks}
               pipelineConfig={pipelineConfig}
               onAddFeature={() => setShowAddDialog(true)}
+              isBacklogGenerating={isGeneratingPlan}
               isSelectionMode={isSelectionMode}
               selectedFeatureIds={selectedFeatureIds}
               onToggleFeatureSelection={toggleFeatureSelection}
@@ -1489,6 +1490,7 @@ export function BoardView() {
               viewMode={viewMode}
               isDragging={activeFeature !== null}
               onAiSuggest={() => setShowPlanDialog(true)}
+              isBacklogGenerating={isGeneratingPlan}
               className="transition-opacity duration-200"
             />
           )}

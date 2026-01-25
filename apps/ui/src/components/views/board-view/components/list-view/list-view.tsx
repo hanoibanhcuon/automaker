@@ -64,6 +64,8 @@ export interface ListViewProps {
   pipelineConfig?: PipelineConfig | null;
   /** Callback to add a new feature */
   onAddFeature?: () => void;
+  /** Whether backlog generation is in progress */
+  isBacklogGenerating?: boolean;
   /** Whether selection mode is enabled */
   isSelectionMode?: boolean;
   /** Set of selected feature IDs */
@@ -130,7 +132,13 @@ const StatusGroupHeader = memo(function StatusGroupHeader({
 /**
  * EmptyState displays a message when there are no features
  */
-const EmptyState = memo(function EmptyState({ onAddFeature }: { onAddFeature?: () => void }) {
+const EmptyState = memo(function EmptyState({
+  onAddFeature,
+  isBacklogGenerating = false,
+}: {
+  onAddFeature?: () => void;
+  isBacklogGenerating?: boolean;
+}) {
   return (
     <div
       className={cn(
@@ -139,8 +147,18 @@ const EmptyState = memo(function EmptyState({ onAddFeature }: { onAddFeature?: (
       )}
       data-testid="list-view-empty"
     >
-      <p className="text-sm mb-4">No features to display</p>
-      {onAddFeature && (
+      {isBacklogGenerating ? (
+        <>
+          <p className="text-sm mb-2">Generating backlog...</p>
+          <p className="text-xs text-muted-foreground/80 mb-4">
+            AI is drafting your backlog in the background. You can monitor progress in Running
+            Agents.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm mb-4">No features to display</p>
+      )}
+      {onAddFeature && !isBacklogGenerating && (
         <Button variant="outline" size="sm" onClick={onAddFeature}>
           <Plus className="w-4 h-4 mr-2" />
           Add Feature
@@ -195,6 +213,7 @@ export const ListView = memo(function ListView({
   runningAutoTasks,
   pipelineConfig = null,
   onAddFeature,
+  isBacklogGenerating = false,
   isSelectionMode = false,
   selectedFeatureIds = EMPTY_SET,
   onToggleFeatureSelection,
@@ -428,7 +447,7 @@ export const ListView = memo(function ListView({
   if (totalFeatures === 0) {
     return (
       <div className={cn('flex flex-col h-full bg-background', className)} data-testid="list-view">
-        <EmptyState onAddFeature={onAddFeature} />
+        <EmptyState onAddFeature={onAddFeature} isBacklogGenerating={isBacklogGenerating} />
       </div>
     );
   }

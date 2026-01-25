@@ -401,14 +401,15 @@ export function TaskProgressPanel({
         <div className="overflow-hidden">
           <div
             className={cn(
-              'p-4 pt-2 relative overflow-y-auto scrollbar-visible min-h-0',
+              'p-4 pt-3 relative overflow-y-auto overflow-x-hidden scrollbar-visible min-h-0',
+              'bg-muted/5 border-t border-border/40',
               listMaxHeightClass
             )}
           >
             {/* Vertical Connector Line */}
-            <div className="absolute left-[2.35rem] top-4 bottom-8 w-px bg-linear-to-b from-border/80 via-border/40 to-transparent" />
+            <div className="absolute left-[2.15rem] top-4 bottom-8 w-px bg-linear-to-b from-primary/40 via-border/40 to-transparent opacity-70" />
 
-            <div className="space-y-5">
+            <div className="space-y-3">
               {tasks.map((task, index) => {
                 const effectiveActiveId = activeTaskIdOverride || currentTaskId;
                 const isActive =
@@ -435,12 +436,19 @@ export function TaskProgressPanel({
                   <div
                     key={task.id}
                     className={cn(
-                      'relative flex gap-4 group/item transition-all duration-300 rounded-lg px-2 py-2 -mx-2',
+                      'relative flex gap-4 group/item transition-all duration-300 rounded-lg px-3 py-2.5',
+                      'border border-transparent hover:bg-muted/40',
                       isPending && 'opacity-60 hover:opacity-100',
                       isActive &&
-                        'bg-primary/10 border border-primary/30 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]'
+                        'bg-primary/10 border-primary/40 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]'
                     )}
                   >
+                    <div
+                      className={cn(
+                        'absolute left-0 top-2 bottom-2 w-0.5 rounded-full',
+                        isActive ? 'bg-primary/70' : 'bg-transparent'
+                      )}
+                    />
                     {/* Icon Status */}
                     <div
                       className={cn(
@@ -448,7 +456,7 @@ export function TaskProgressPanel({
                         isCompleted &&
                           'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400',
                         isActive &&
-                          'bg-primary border-primary text-primary-foreground ring-4 ring-primary/10 scale-110',
+                          'bg-primary border-primary text-primary-foreground ring-4 ring-primary/15 scale-110 shadow-md shadow-primary/20',
                         isPending && 'bg-muted border-border text-muted-foreground'
                       )}
                     >

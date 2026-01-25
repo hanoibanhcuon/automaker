@@ -106,6 +106,21 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
         } catch {
           hasAgentOutput = false;
         }
+        const statusValue = updatedFeature.status || 'backlog';
+        const isPipelineStatus =
+          typeof statusValue === 'string' && statusValue.startsWith('pipeline_');
+        const shouldExpectOutput =
+          Boolean(updatedFeature.startedAt) ||
+          isPipelineStatus ||
+          [
+            'in_progress',
+            'waiting_approval',
+            'verified',
+            'completed',
+            'failed',
+            'error',
+            'running',
+          ].includes(statusValue);
 
         const issues: string[] = [];
         const hasError =
@@ -121,7 +136,7 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
         if (missingFiles.length > 0) {
           issues.push('Missing expected files');
         }
-        if (!hasAgentOutput) {
+        if (shouldExpectOutput && !hasAgentOutput) {
           issues.push('Agent output missing');
         }
 
@@ -159,7 +174,7 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
         }
         if (missingFiles.length > 0) missingFilesCount += missingFiles.length;
         if (incompletePlan) incompletePlansCount += 1;
-        if (!hasAgentOutput) missingOutputCount += 1;
+        if (shouldExpectOutput && !hasAgentOutput) missingOutputCount += 1;
         if (dependencyRestoreCount > 0) missingDependenciesCount += dependencyRestoreCount;
 
         items.push({
@@ -185,7 +200,7 @@ export function createRecoveryCenterHandler(featureLoader: FeatureLoader) {
           hasAgentOutput,
           issues,
           canResume: incompletePlan,
-          canRebuild: !hasAgentOutput || missingFiles.length > 0,
+          canRebuild: (shouldExpectOutput && !hasAgentOutput) || missingFiles.length > 0,
         });
       }
 

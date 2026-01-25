@@ -64,6 +64,8 @@ interface KanbanBoardProps {
   onToggleSelectionMode?: (target?: 'backlog' | 'waiting_approval') => void;
   // Empty state action props
   onAiSuggest?: () => void;
+  /** Whether backlog plan generation is currently running */
+  isBacklogGenerating?: boolean;
   /** Whether currently dragging (hides empty states during drag) */
   isDragging?: boolean;
   /** Whether the board is in read-only mode */
@@ -301,6 +303,7 @@ export function KanbanBoard({
   onToggleFeatureSelection,
   onToggleSelectionMode,
   onAiSuggest,
+  isBacklogGenerating = false,
   isDragging = false,
   isReadOnly = false,
   className,
@@ -512,6 +515,16 @@ export function KanbanBoard({
                     const effectiveGlassmorphism =
                       backgroundSettings.cardGlassmorphism && !reduceEffects;
 
+                    const backlogGeneratingConfig =
+                      column.id === 'backlog' && isBacklogGenerating
+                        ? {
+                            title: 'Generating Backlog',
+                            description:
+                              'AI is drafting your backlog in the background. You can monitor progress in Running Agents.',
+                            icon: 'clock' as const,
+                            primaryAction: undefined,
+                          }
+                        : undefined;
                     return (
                       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
                         {/* Empty state card when column has no features */}
@@ -530,7 +543,7 @@ export function KanbanBoard({
                                     title: `${column.title} Empty`,
                                     description: `Features will appear here during the ${column.title.toLowerCase()} phase of the pipeline.`,
                                   }
-                                : undefined
+                                : backlogGeneratingConfig
                             }
                           />
                         )}

@@ -345,53 +345,50 @@ export const DEFAULT_AGENT_PROMPTS: ResolvedAgentPrompts = {
 
 /**
  * ========================================================================
- * BACKLOG PLAN PROMPTS (HARDENED / PRODUCTION-SAFE)
+ * BACKLOG PLAN PROMPTS
  * ========================================================================
- *
- * Design goals:
- * - Always produce parseable JSON (no markdown fences)
- * - Prevent invalid JSON examples (no TS union types inside JSON)
- * - Enforce dependency graph integrity (especially on deletions)
- * - Encourage DAG branching (avoid unnecessary linear chains)
- * - Patch-style updates (only fields that change)
  */
 
 export const DEFAULT_BACKLOG_PLAN_SYSTEM_PROMPT = `You are an AI assistant helping to modify a software project's feature backlog.
-You will be given:
-- The current list of features (each includes: id, title, description, category, dependencies, priority)
-- A user request describing how to modify the backlog
+You will be given the current list of features and a user request to modify the backlog.
 
-PRIMARY OBJECTIVE:
-Produce a strictly valid JSON object describing backlog changes while preserving dependency graph integrity.
+IMPORTANT CONTEXT (automatically injected):
+- Remember to update the dependency graph if deleting existing features
+- Remember to define dependencies on new features hooked into relevant existing ones
+- Maintain dependency graph integrity (no orphaned dependencies)
+- When deleting a feature, identify which other features depend on it
 
-DEPENDENCY RULES (must follow):
-- Dependencies represent true prerequisites only. If tasks can be done in parallel, they MUST NOT depend on each other.
-- Prefer a branching DAG:
-  - If multiple tasks share the same prerequisite, they should all depend on that prerequisite directly (do NOT chain sequentially).
-- No orphaned/broken dependencies:
-  - Never reference a deleted feature as a dependency.
-  - Every dependency reference must point to an existing feature id OR an exact existing title, OR a feature being added in this same plan (by exact title).
-- Deletions require graph repair:
-  1) Identify all features that depend on the deleted feature (direct dependencies).
-  2) Remove the deleted dependency from each dependent feature via dependencyUpdates.
-  3) If a replacement prerequisite is required, add it explicitly (do not invent unnecessary dependencies).
+CRITICAL OUTPUT REQUIREMENTS:
+- Output MUST be valid JSON only (no markdown, no commentary).
+- JSON keys must remain in English exactly as shown.
+- ALL human-readable strings (title/description/reason/summary/category labels if applicable) MUST be in Vietnamese.
 
-OUTPUT REQUIREMENTS (strict):
-- Respond with ONLY a raw JSON object (no markdown, no code fences, no extra text).
-- The JSON must match the schema below exactly.
-- Categories must be one of: "feature", "bug", "enhancement", "refactor"
-- Priorities must be integers. Use the same priority scale as the existing backlog.
+DEPENDENCY GRAPH RULES (MANDATORY):
+- Every "add" MUST include a "dependencies" array (empty for true foundations only).
+- Ensure a coherent dependency graph: foundation/documentation features first, implementation features depend on them.
+- For multi-step systems, create at least 1-2 foundation features and make others depend on them.
+- Avoid isolated features unless explicitly requested. Prefer explicit dependencies that describe build order.
+- If user requests "documentation/spec first", add doc/spec features and make downstream features depend on them.
 
-JSON SCHEMA (example values are placeholders; output must be valid JSON):
+Your task is to analyze the request and produce a structured JSON plan with:
+1. Features to ADD (include id, title, description, category, and dependencies)
+2. Features to UPDATE (specify featureId and the updates)
+3. Features to DELETE (specify featureId)
+4. A summary of the changes
+5. Any dependency updates needed (removed dependencies due to deletions, new dependencies for new features)
+
+Respond with ONLY a JSON object in this exact format:
+\`\`\`json
 {
   "changes": [
     {
       "type": "add",
       "feature": {
+        "id": "descriptive-kebab-case-id",
         "title": "Feature title",
         "description": "Feature description",
-        "category": "feature",
-        "dependencies": ["existing-feature-id-or-exact-title"],
+        "category": "feature" | "bug" | "enhancement" | "refactor",
+        "dependencies": ["existing-feature-id"],
         "priority": 1
       },
       "reason": "Why this feature should be added"
@@ -413,20 +410,23 @@ JSON SCHEMA (example values are placeholders; output must be valid JSON):
   "summary": "Brief overview of all proposed changes",
   "dependencyUpdates": [
     {
-      "featureId": "feature-to-adjust",
-      "removedDependencies": ["removed-feature-id-or-exact-title"],
-      "addedDependencies": ["new-feature-id-or-exact-title"]
+      "featureId": "feature-that-depended-on-deleted",
+      "removedDependencies": ["deleted-feature-id"],
+      "addedDependencies": []
     }
   ]
 }
+\`\`\`
 
-IMPORTANT RULES (must follow):
-- Patch updates only: in "update" entries, include ONLY the fields that change.
-- If no dependency changes are needed, set "dependencyUpdates" to [].
-- If you delete a feature that others depend on, you MUST include a dependencyUpdates entry for EACH dependent feature.
-- When referencing a feature without an id, use its EXACT title; the system will resolve titles to ids.
-- Ensure every "add" includes: title, description, category, dependencies (array, possibly empty), priority (integer).
-- Keep independent tasks parallel by leaving dependencies empty or pointing to shared prerequisites.
+Important rules:
+- CRITICAL: For new features, always include a descriptive "id" in kebab-case (e.g., "user-authentication", "design-system-foundation")
+- Dependencies must reference these exact IDs - both for existing features and new features being added in the same plan
+- Only include fields that need to change in updates
+- Ensure dependency references are valid (don't reference deleted features)
+- Provide clear, actionable descriptions
+- Maintain category consistency (feature, bug, enhancement, refactor)
+- When adding dependencies, ensure the referenced features exist or are being added in the same plan
+- Include dependencies for every new feature (empty only if truly foundational)
 `;
 
 export const DEFAULT_BACKLOG_PLAN_USER_PROMPT_TEMPLATE = `Current Features in Backlog:
@@ -436,7 +436,11 @@ export const DEFAULT_BACKLOG_PLAN_USER_PROMPT_TEMPLATE = `Current Features in Ba
 
 User Request: {{userRequest}}
 
-Return ONLY the JSON object that matches the required schema.`;
+Please analyze the current backlog and the user's request, then provide a JSON plan for the modifications.
+
+Extra guidance:
+- If the request implies documentation/specs first, add doc/spec features and make implementation features depend on them.
+- Build a clear dependency chain so execution order is obvious.`;
 
 /**
  * Default Backlog Plan prompts (from backlog-plan/generate-plan.ts)

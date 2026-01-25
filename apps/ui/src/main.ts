@@ -205,12 +205,16 @@ function getIconPath(): string | null {
  * Relative path to window bounds settings file within userData
  */
 const WINDOW_BOUNDS_FILENAME = 'window-bounds.json';
+let cachedWindowBounds: WindowBounds | null | undefined = undefined;
 
 /**
  * Load saved window bounds from disk
  * Uses centralized electronUserData methods for path validation.
  */
 function loadWindowBounds(): WindowBounds | null {
+  if (cachedWindowBounds !== undefined) {
+    return cachedWindowBounds;
+  }
   try {
     if (electronUserDataExists(WINDOW_BOUNDS_FILENAME)) {
       const data = electronUserDataReadFileSync(WINDOW_BOUNDS_FILENAME);
@@ -222,12 +226,14 @@ function loadWindowBounds(): WindowBounds | null {
         typeof bounds.width === 'number' &&
         typeof bounds.height === 'number'
       ) {
+        cachedWindowBounds = bounds;
         return bounds;
       }
     }
   } catch (error) {
     logger.warn('Failed to load window bounds:', (error as Error).message);
   }
+  cachedWindowBounds = null;
   return null;
 }
 
@@ -238,6 +244,7 @@ function loadWindowBounds(): WindowBounds | null {
 function saveWindowBounds(bounds: WindowBounds): void {
   try {
     electronUserDataWriteFileSync(WINDOW_BOUNDS_FILENAME, JSON.stringify(bounds, null, 2));
+    cachedWindowBounds = bounds;
     logger.info('Window bounds saved');
   } catch (error) {
     logger.warn('Failed to save window bounds:', (error as Error).message);
@@ -545,6 +552,9 @@ async function startServer(): Promise<void> {
  * Wait for server to be available
  */
 async function waitForServer(maxAttempts = 30): Promise<void> {
+  const baseDelayMs = 200;
+  const maxDelayMs = 1500;
+
   for (let i = 0; i < maxAttempts; i++) {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -564,7 +574,8 @@ async function waitForServer(maxAttempts = 30): Promise<void> {
       logger.info('Server is ready');
       return;
     } catch {
-      await new Promise((r) => setTimeout(r, 500));
+      const delayMs = Math.min(maxDelayMs, baseDelayMs * (i + 1));
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
@@ -768,14 +779,16 @@ app.whenReady().then(async () => {
       logger.info('Default static port', DEFAULT_STATIC_PORT, 'in use, using port', staticPort);
     }
 
-    // Start static file server in production
+    // Start servers in parallel to reduce startup latency
+    const startupTasks: Array<Promise<void>> = [];
     if (app.isPackaged) {
-      await startStaticServer();
+      startupTasks.push(startStaticServer());
     }
-
-    // Start backend server (unless using external server)
     if (!skipEmbeddedServer) {
-      await startServer();
+      startupTasks.push(startServer());
+    }
+    if (startupTasks.length > 0) {
+      await Promise.all(startupTasks);
     }
 
     // Create window

@@ -32,7 +32,20 @@ import { randomUUID } from 'crypto';
 const logger = createLogger('EventHistoryService');
 
 /** Maximum events to keep in the index (oldest are pruned) */
-const MAX_EVENTS_IN_INDEX = 1000;
+const MAX_EVENTS_IN_INDEX = resolveMaxEventsInIndex();
+
+interface EventHistoryCacheEntry {
+  createdAt: number;
+  index: StoredEventIndex;
+}
+
+function resolveMaxEventsInIndex(): number {
+  const parsed = Number.parseInt(process.env.EVENT_HISTORY_MAX_EVENTS || '', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 1000;
+}
 
 /**
  * Atomic file write - write to temp file then rename
@@ -88,6 +101,16 @@ export interface StoreEventInput {
  * EventHistoryService - Manages persistent storage of events
  */
 export class EventHistoryService {
+  private cache = new Map<string, EventHistoryCacheEntry>();
+  private cacheTtlMs = EventHistoryService.resolveCacheTtlMs();
+
+  private static resolveCacheTtlMs(): number {
+    const parsed = Number.parseInt(process.env.EVENT_HISTORY_CACHE_TTL_MS || '', 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+    return 2000;
+  }
   /**
    * Store a new event to history
    *
@@ -139,8 +162,7 @@ export class EventHistoryService {
    * @returns Promise resolving to array of event summaries
    */
   async getEvents(projectPath: string, filter?: EventHistoryFilter): Promise<StoredEventSummary[]> {
-    const indexPath = getEventHistoryIndexPath(projectPath);
-    const index = await readJsonFile<StoredEventIndex>(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    const index = await this.getIndex(projectPath);
 
     let events = [...index.events];
 
@@ -161,9 +183,6 @@ export class EventHistoryService {
         events = events.filter((e) => new Date(e.timestamp).getTime() <= untilDate);
       }
     }
-
-    // Sort by timestamp (newest first)
-    events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Apply pagination
     if (filter?.offset) {
@@ -207,7 +226,7 @@ export class EventHistoryService {
   async deleteEvent(projectPath: string, eventId: string): Promise<boolean> {
     // Remove from index
     const indexPath = getEventHistoryIndexPath(projectPath);
-    const index = await readJsonFile<StoredEventIndex>(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    const index = await this.getIndex(projectPath);
 
     const initialLength = index.events.length;
     index.events = index.events.filter((e) => e.id !== eventId);
@@ -217,6 +236,7 @@ export class EventHistoryService {
     }
 
     await atomicWriteJson(indexPath, index);
+    this.setCacheEntry(projectPath, index);
 
     // Delete the event file
     const eventPath = getEventPath(projectPath, eventId);
@@ -240,7 +260,7 @@ export class EventHistoryService {
    */
   async clearEvents(projectPath: string): Promise<number> {
     const indexPath = getEventHistoryIndexPath(projectPath);
-    const index = await readJsonFile<StoredEventIndex>(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    const index = await this.getIndex(projectPath);
 
     const count = index.events.length;
 
@@ -258,6 +278,7 @@ export class EventHistoryService {
 
     // Reset the index
     await atomicWriteJson(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    this.setCacheEntry(projectPath, DEFAULT_EVENT_HISTORY_INDEX);
 
     logger.info(`Cleared ${count} events for project`);
     return count;
@@ -284,7 +305,7 @@ export class EventHistoryService {
    */
   private async addToIndex(projectPath: string, event: StoredEvent): Promise<void> {
     const indexPath = getEventHistoryIndexPath(projectPath);
-    const index = await readJsonFile<StoredEventIndex>(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    const index = await this.getIndex(projectPath);
 
     const summary: StoredEventSummary = {
       id: event.id,
@@ -313,6 +334,7 @@ export class EventHistoryService {
     }
 
     await atomicWriteJson(indexPath, index);
+    this.setCacheEntry(projectPath, index);
   }
 
   /**
@@ -321,6 +343,37 @@ export class EventHistoryService {
   private extractProjectName(projectPath: string): string {
     const parts = projectPath.split(/[/\\]/);
     return parts[parts.length - 1] || projectPath;
+  }
+
+  private getCacheEntry(projectPath: string): EventHistoryCacheEntry | null {
+    const entry = this.cache.get(projectPath);
+    if (!entry) {
+      return null;
+    }
+    const ageMs = Date.now() - entry.createdAt;
+    if (ageMs > this.cacheTtlMs) {
+      this.cache.delete(projectPath);
+      return null;
+    }
+    return entry;
+  }
+
+  private setCacheEntry(projectPath: string, index: StoredEventIndex): void {
+    this.cache.set(projectPath, {
+      createdAt: Date.now(),
+      index,
+    });
+  }
+
+  private async getIndex(projectPath: string): Promise<StoredEventIndex> {
+    const cached = this.getCacheEntry(projectPath);
+    if (cached) {
+      return cached.index;
+    }
+    const indexPath = getEventHistoryIndexPath(projectPath);
+    const index = await readJsonFile<StoredEventIndex>(indexPath, DEFAULT_EVENT_HISTORY_INDEX);
+    this.setCacheEntry(projectPath, index);
+    return index;
   }
 }
 

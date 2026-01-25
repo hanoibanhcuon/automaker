@@ -20,7 +20,7 @@ import { promisify } from 'util';
 import { createLogger } from '@automaker/utils';
 import type { EventEmitter } from '../lib/events.js';
 import type { SettingsService } from './settings-service.js';
-import type { EventHistoryService } from './event-history-service.js';
+import type { EventHistoryService, StoreEventInput } from './event-history-service.js';
 import type { FeatureLoader } from './feature-loader.js';
 import type {
   EventHook,
@@ -87,6 +87,9 @@ export class EventHookService {
   private eventHistoryService: EventHistoryService | null = null;
   private featureLoader: FeatureLoader | null = null;
   private unsubscribe: (() => void) | null = null;
+  private historyQueue: StoreEventInput[] = [];
+  private historyFlushTimer: NodeJS.Timeout | null = null;
+  private isFlushingHistory = false;
 
   /**
    * Initialize the service with event emitter, settings service, event history service, and feature loader
@@ -105,9 +108,9 @@ export class EventHookService {
     // Subscribe to events
     this.unsubscribe = emitter.subscribe((type, payload) => {
       if (type === 'auto-mode:event') {
-        this.handleAutoModeEvent(payload as AutoModeEventPayload);
+        void this.handleAutoModeEvent(payload as AutoModeEventPayload);
       } else if (type === 'feature:created') {
-        this.handleFeatureCreatedEvent(payload as FeatureCreatedPayload);
+        void this.handleFeatureCreatedEvent(payload as FeatureCreatedPayload);
       }
     });
 
@@ -122,6 +125,12 @@ export class EventHookService {
       this.unsubscribe();
       this.unsubscribe = null;
     }
+    if (this.historyFlushTimer) {
+      clearTimeout(this.historyFlushTimer);
+      this.historyFlushTimer = null;
+    }
+    this.historyQueue = [];
+    this.isFlushingHistory = false;
     this.emitter = null;
     this.settingsService = null;
     this.eventHistoryService = null;
@@ -210,19 +219,15 @@ export class EventHookService {
   ): Promise<void> {
     // Store event to history (even if no hooks match)
     if (this.eventHistoryService && context.projectPath) {
-      try {
-        await this.eventHistoryService.storeEvent({
-          trigger,
-          projectPath: context.projectPath,
-          featureId: context.featureId,
-          featureName: context.featureName,
-          error: context.error,
-          errorType: context.errorType,
-          passes: additionalData?.passes,
-        });
-      } catch (error) {
-        logger.error('Failed to store event to history:', error);
-      }
+      this.enqueueHistoryEvent({
+        trigger,
+        projectPath: context.projectPath,
+        featureId: context.featureId,
+        featureName: context.featureName,
+        error: context.error,
+        errorType: context.errorType,
+        passes: additionalData?.passes,
+      });
     }
 
     if (!this.settingsService) {
@@ -387,6 +392,58 @@ export class EventHookService {
   private extractProjectName(projectPath: string): string {
     const parts = projectPath.split(/[/\\]/);
     return parts[parts.length - 1] || projectPath;
+  }
+
+  private enqueueHistoryEvent(input: StoreEventInput): void {
+    if (!this.eventHistoryService) {
+      return;
+    }
+
+    const maxQueueSize = Number.parseInt(process.env.EVENT_HISTORY_QUEUE_MAX || '5000', 10);
+    if (this.historyQueue.length >= maxQueueSize) {
+      this.historyQueue.shift();
+    }
+
+    this.historyQueue.push(input);
+    this.scheduleHistoryFlush();
+  }
+
+  private scheduleHistoryFlush(): void {
+    if (this.historyFlushTimer || this.isFlushingHistory) {
+      return;
+    }
+
+    const delayMs = Number.parseInt(process.env.EVENT_HISTORY_FLUSH_INTERVAL_MS || '500', 10);
+    this.historyFlushTimer = setTimeout(() => {
+      this.historyFlushTimer = null;
+      void this.flushHistoryQueue();
+    }, delayMs);
+  }
+
+  private async flushHistoryQueue(): Promise<void> {
+    if (this.isFlushingHistory || !this.eventHistoryService) {
+      return;
+    }
+
+    this.isFlushingHistory = true;
+    try {
+      while (this.historyQueue.length > 0) {
+        const next = this.historyQueue.shift();
+        if (!next) {
+          continue;
+        }
+        try {
+          await this.eventHistoryService.storeEvent(next);
+        } catch (error) {
+          logger.error('Failed to store event to history:', error);
+        }
+      }
+    } finally {
+      this.isFlushingHistory = false;
+      if (this.historyQueue.length > 0) {
+        this.scheduleHistoryFlush();
+      }
+    }
   }
 }
 

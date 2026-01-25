@@ -92,6 +92,29 @@ export default defineConfig(({ command }) => {
           'events',
           'readline',
         ],
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return undefined;
+            }
+            if (id.includes('@xterm') || id.includes('xterm')) {
+              return 'xterm';
+            }
+            if (id.includes('@xyflow') || id.includes('dagre')) {
+              return 'graph';
+            }
+            if (id.includes('@codemirror') || id.includes('codemirror')) {
+              return 'codemirror';
+            }
+            if (id.includes('@tanstack')) {
+              return 'tanstack';
+            }
+            if (id.includes('react')) {
+              return 'react-vendor';
+            }
+            return 'vendor';
+          },
+        },
       },
     },
     optimizeDeps: {

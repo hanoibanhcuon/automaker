@@ -94,7 +94,11 @@ const DATA_DIR = process.env.DATA_DIR || './data';
 logger.info('[SERVER_STARTUP] process.env.DATA_DIR:', process.env.DATA_DIR);
 logger.info('[SERVER_STARTUP] Resolved DATA_DIR:', DATA_DIR);
 logger.info('[SERVER_STARTUP] process.cwd():', process.cwd());
-const ENABLE_REQUEST_LOGGING_DEFAULT = process.env.ENABLE_REQUEST_LOGGING !== 'false'; // Default to true
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const ENABLE_REQUEST_LOGGING_DEFAULT =
+  process.env.ENABLE_REQUEST_LOGGING !== undefined
+    ? process.env.ENABLE_REQUEST_LOGGING !== 'false'
+    : !IS_PRODUCTION;
 
 // Runtime-configurable request logging flag (can be changed via settings)
 let requestLoggingEnabled = ENABLE_REQUEST_LOGGING_DEFAULT;
@@ -354,6 +358,16 @@ const server = createServer(app);
 // WebSocket servers using noServer mode for proper multi-path support
 const wss = new WebSocketServer({ noServer: true });
 const terminalWss = new WebSocketServer({ noServer: true });
+const WS_EVENT_QUEUE_MAX = Number.parseInt(process.env.EVENTS_WS_QUEUE_MAX || '500', 10);
+const WS_EVENT_BUFFER_MAX_BYTES = Number.parseInt(
+  process.env.EVENTS_WS_BUFFER_MAX_BYTES || '1048576',
+  10
+);
+const WS_EVENT_MAX_MESSAGE_BYTES = Number.parseInt(
+  process.env.EVENTS_WS_MAX_MESSAGE_BYTES || '524288',
+  10
+);
+const WS_EVENT_FLUSH_DELAY_MS = Number.parseInt(process.env.EVENTS_WS_FLUSH_DELAY_MS || '10', 10);
 const terminalService = getTerminalService();
 
 /**
@@ -422,6 +436,38 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', (ws: WebSocket) => {
   logger.info('Client connected, ready state:', ws.readyState);
 
+  let flushTimer: NodeJS.Timeout | null = null;
+  const pendingMessages: string[] = [];
+
+  const scheduleFlush = () => {
+    if (flushTimer) {
+      return;
+    }
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      flushQueue();
+    }, WS_EVENT_FLUSH_DELAY_MS);
+  };
+
+  const flushQueue = () => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      pendingMessages.length = 0;
+      return;
+    }
+
+    while (pendingMessages.length > 0 && ws.bufferedAmount < WS_EVENT_BUFFER_MAX_BYTES) {
+      const message = pendingMessages.shift();
+      if (!message) {
+        continue;
+      }
+      ws.send(message);
+    }
+
+    if (pendingMessages.length > 0) {
+      scheduleFlush();
+    }
+  };
+
   // Subscribe to all events and forward to this client
   const unsubscribe = events.subscribe((type, payload) => {
     logger.info('Event received:', {
@@ -434,12 +480,25 @@ wss.on('connection', (ws: WebSocket) => {
 
     if (ws.readyState === WebSocket.OPEN) {
       const message = JSON.stringify({ type, payload });
+      const messageSize = Buffer.byteLength(message);
+      if (messageSize > WS_EVENT_MAX_MESSAGE_BYTES) {
+        logger.warn('Dropping oversized event message', {
+          type,
+          messageSize,
+          maxBytes: WS_EVENT_MAX_MESSAGE_BYTES,
+        });
+        return;
+      }
       logger.info('Sending event to client:', {
         type,
         messageLength: message.length,
         sessionId: (payload as any)?.sessionId,
       });
-      ws.send(message);
+      if (pendingMessages.length >= WS_EVENT_QUEUE_MAX) {
+        pendingMessages.shift();
+      }
+      pendingMessages.push(message);
+      flushQueue();
     } else {
       logger.info('WARNING: Cannot send event, WebSocket not open. ReadyState:', ws.readyState);
     }
@@ -447,11 +506,21 @@ wss.on('connection', (ws: WebSocket) => {
 
   ws.on('close', () => {
     logger.info('Client disconnected');
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    pendingMessages.length = 0;
     unsubscribe();
   });
 
   ws.on('error', (error) => {
     logger.error('ERROR:', error);
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    pendingMessages.length = 0;
     unsubscribe();
   });
 });

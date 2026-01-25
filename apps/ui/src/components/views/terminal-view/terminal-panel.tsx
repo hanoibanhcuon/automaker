@@ -52,6 +52,7 @@ import { DEFAULT_FONT_VALUE } from '@/config/ui-font-options';
 import { toast } from 'sonner';
 import { getElectronAPI } from '@/lib/electron';
 import { getApiKey, getSessionToken, getServerUrlSync } from '@/lib/http-api-client';
+import { loadFontFamily } from '@/styles/font-loader';
 
 const logger = createLogger('Terminal');
 const NO_STORE_CACHE_MODE: RequestCache = 'no-store';
@@ -133,6 +134,8 @@ export function TerminalPanel({
   const xtermRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<XFitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingWritesRef = useRef<string[]>([]);
+  const writeRafRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastShortcutTimeRef = useRef<number>(0);
@@ -1038,7 +1041,17 @@ export function TerminalPanel({
           const msg = JSON.parse(event.data);
           switch (msg.type) {
             case 'data':
-              terminal.write(msg.data);
+              pendingWritesRef.current.push(msg.data);
+              if (writeRafRef.current === null) {
+                writeRafRef.current = requestAnimationFrame(() => {
+                  writeRafRef.current = null;
+                  const pending = pendingWritesRef.current.join('');
+                  pendingWritesRef.current = [];
+                  if (pending) {
+                    terminal.write(pending);
+                  }
+                });
+              }
               break;
             case 'scrollback':
               // Only process scrollback if there's actual data
@@ -1118,6 +1131,11 @@ export function TerminalPanel({
           clearInterval(heartbeatIntervalRef.current);
           heartbeatIntervalRef.current = null;
         }
+        if (writeRafRef.current !== null) {
+          cancelAnimationFrame(writeRafRef.current);
+          writeRafRef.current = null;
+        }
+        pendingWritesRef.current = [];
 
         if (event.code === 4001) {
           setConnectionStatus('auth_failed');
@@ -1190,6 +1208,11 @@ export function TerminalPanel({
 
       ws.onerror = (error) => {
         logger.error(`WebSocket error for session ${sessionId}:`, error);
+        if (writeRafRef.current !== null) {
+          cancelAnimationFrame(writeRafRef.current);
+          writeRafRef.current = null;
+        }
+        pendingWritesRef.current = [];
       };
     };
 
@@ -1281,7 +1304,9 @@ export function TerminalPanel({
 
   useEffect(() => {
     if (xtermRef.current && isTerminalReady) {
-      xtermRef.current.options.fontFamily = getTerminalFontFamily(fontFamily);
+      const resolvedFont = getTerminalFontFamily(fontFamily);
+      void loadFontFamily(resolvedFont);
+      xtermRef.current.options.fontFamily = resolvedFont;
       fitAddonRef.current?.fit();
     }
   }, [fontFamily, isTerminalReady]);

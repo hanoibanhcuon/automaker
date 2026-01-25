@@ -11,7 +11,12 @@ import { reconcileFeaturePlanSpec, hasPlanSpecChanges } from '../utils/plan-reco
 export function createListHandler(featureLoader: FeatureLoader) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath } = req.body as { projectPath: string };
+      const { projectPath, fields, offset, limit } = req.body as {
+        projectPath: string;
+        fields?: string[];
+        offset?: number;
+        limit?: number;
+      };
 
       if (!projectPath) {
         res.status(400).json({ success: false, error: 'projectPath is required' });
@@ -62,7 +67,32 @@ export function createListHandler(featureLoader: FeatureLoader) {
         })
       );
 
-      res.json({ success: true, features: reconciledFeatures });
+      let responseFeatures: Feature[] | Array<Partial<Feature>> = reconciledFeatures;
+
+      if (Array.isArray(fields) && fields.length > 0) {
+        const fieldSet = new Set(fields);
+        responseFeatures = reconciledFeatures.map((feature) => {
+          const partial: Partial<Feature> = { id: feature.id };
+          for (const field of fieldSet) {
+            if (field in feature) {
+              (partial as any)[field] = (feature as any)[field];
+            }
+          }
+          return partial;
+        });
+      }
+
+      const safeOffset = Number.isFinite(offset) && offset && offset > 0 ? Math.floor(offset) : 0;
+      const safeLimit =
+        Number.isFinite(limit) && limit && limit > 0 ? Math.floor(limit) : undefined;
+
+      if (safeOffset || safeLimit !== undefined) {
+        const start = safeOffset || 0;
+        const end = safeLimit !== undefined ? start + safeLimit : undefined;
+        responseFeatures = responseFeatures.slice(start, end);
+      }
+
+      res.json({ success: true, features: responseFeatures });
     } catch (error) {
       logError(error, 'List features failed');
       res.status(500).json({ success: false, error: getErrorMessage(error) });

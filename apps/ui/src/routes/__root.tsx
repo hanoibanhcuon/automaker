@@ -15,6 +15,7 @@ import { useSetupStore } from '@/store/setup-store';
 import { useAuthStore } from '@/store/auth-store';
 import { getElectronAPI, isElectron } from '@/lib/electron';
 import { isMac } from '@/lib/utils';
+import { useShallow } from 'zustand/react/shallow';
 import { initializeProject } from '@/lib/project-init';
 import {
   initApiKey,
@@ -38,6 +39,8 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { useProjectSettingsLoader } from '@/hooks/use-project-settings-loader';
 import { useIsCompact } from '@/hooks/use-media-query';
 import type { Project } from '@/lib/electron';
+import { loadFontFamily } from '@/styles/font-loader';
+import { loadThemeCss } from '@/styles/theme-loader';
 
 const logger = createLogger('RootLayout');
 const SHOW_QUERY_DEVTOOLS = import.meta.env.DEV;
@@ -173,7 +176,26 @@ function RootLayoutContent() {
     fetchCodexModels,
     sidebarOpen,
     toggleSidebar,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((state) => ({
+      setIpcConnected: state.setIpcConnected,
+      projects: state.projects,
+      currentProject: state.currentProject,
+      projectHistory: state.projectHistory,
+      upsertAndSetCurrentProject: state.upsertAndSetCurrentProject,
+      getEffectiveTheme: state.getEffectiveTheme,
+      getEffectiveFontSans: state.getEffectiveFontSans,
+      getEffectiveFontMono: state.getEffectiveFontMono,
+      theme: state.theme,
+      fontFamilySans: state.fontFamilySans,
+      fontFamilyMono: state.fontFamilyMono,
+      skipSandboxWarning: state.skipSandboxWarning,
+      setSkipSandboxWarning: state.setSkipSandboxWarning,
+      fetchCodexModels: state.fetchCodexModels,
+      sidebarOpen: state.sidebarOpen,
+      toggleSidebar: state.toggleSidebar,
+    }))
+  );
   const { setupComplete, codexCliStatus } = useSetupStore();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
@@ -744,13 +766,19 @@ function RootLayoutContent() {
       .filter((theme) => theme !== ('system' as ThemeOption['value']));
     root.classList.remove(...themeClasses);
 
-    if (deferredTheme === 'dark') {
+    const resolvedTheme =
+      deferredTheme === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : deferredTheme;
+
+    void loadThemeCss(resolvedTheme);
+
+    if (resolvedTheme === 'dark') {
       root.classList.add('dark');
-    } else if (deferredTheme === 'system') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.add(isDark ? 'dark' : 'light');
-    } else if (deferredTheme && deferredTheme !== 'light') {
-      root.classList.add(deferredTheme);
+    } else if (resolvedTheme && resolvedTheme !== 'light') {
+      root.classList.add(resolvedTheme);
     } else {
       root.classList.add('light');
     }
@@ -759,6 +787,9 @@ function RootLayoutContent() {
   // Apply font CSS variables for project-specific font overrides
   useEffect(() => {
     const root = document.documentElement;
+
+    void loadFontFamily(effectiveFontSans);
+    void loadFontFamily(effectiveFontMono);
 
     if (effectiveFontSans) {
       root.style.setProperty('--font-sans', effectiveFontSans);

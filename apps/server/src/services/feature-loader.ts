@@ -24,10 +24,27 @@ import { addImplementedFeature, type ImplementedFeature } from '../lib/xml-extra
 
 const logger = createLogger('FeatureLoader');
 
+interface FeatureCacheEntry {
+  createdAt: number;
+  features: Feature[];
+  byId: Map<string, Feature>;
+  byTitle: Map<string, Feature>;
+}
+
 // Re-export Feature type for convenience
 export type { Feature };
 
 export class FeatureLoader {
+  private featureCache = new Map<string, FeatureCacheEntry>();
+  private featureCacheTtlMs = FeatureLoader.resolveCacheTtlMs();
+
+  private static resolveCacheTtlMs(): number {
+    const parsed = Number.parseInt(process.env.FEATURE_CACHE_TTL_MS || '', 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+    return 2000;
+  }
   /**
    * Get the features directory path
    */
@@ -185,6 +202,11 @@ export class FeatureLoader {
    */
   async getAll(projectPath: string): Promise<Feature[]> {
     try {
+      const cached = this.getCacheEntry(projectPath);
+      if (cached) {
+        return cached.features;
+      }
+
       const featuresDir = this.getFeaturesDir(projectPath);
 
       // Check if features directory exists
@@ -237,6 +259,7 @@ export class FeatureLoader {
         return aTime - bTime;
       });
 
+      this.setCacheEntry(projectPath, features);
       return features;
     } catch (error) {
       logger.error('Failed to get all features:', error);
@@ -263,6 +286,10 @@ export class FeatureLoader {
     }
 
     const normalizedTitle = this.normalizeTitle(title);
+    const cached = this.getCacheEntry(projectPath);
+    if (cached) {
+      return cached.byTitle.get(normalizedTitle) || null;
+    }
     const features = await this.getAll(projectPath);
 
     for (const feature of features) {
@@ -291,6 +318,17 @@ export class FeatureLoader {
     }
 
     const normalizedTitle = this.normalizeTitle(title);
+    const cached = this.getCacheEntry(projectPath);
+    if (cached) {
+      const feature = cached.byTitle.get(normalizedTitle);
+      if (!feature) {
+        return null;
+      }
+      if (excludeFeatureId && feature.id === excludeFeatureId) {
+        return null;
+      }
+      return feature;
+    }
     const features = await this.getAll(projectPath);
 
     for (const feature of features) {
@@ -370,6 +408,7 @@ export class FeatureLoader {
     await atomicWriteJson(featureJsonPath, feature, { backupCount: DEFAULT_BACKUP_COUNT });
 
     logger.info(`Created feature ${featureId}`);
+    this.upsertCacheFeature(projectPath, feature);
     return feature;
   }
 
@@ -456,6 +495,7 @@ export class FeatureLoader {
     await atomicWriteJson(featureJsonPath, updatedFeature, { backupCount: DEFAULT_BACKUP_COUNT });
 
     logger.info(`Updated feature ${featureId}`);
+    this.upsertCacheFeature(projectPath, updatedFeature);
     return updatedFeature;
   }
 
@@ -467,6 +507,7 @@ export class FeatureLoader {
       const featureDir = this.getFeatureDir(projectPath, featureId);
       await secureFs.rm(featureDir, { recursive: true, force: true });
       logger.info(`Deleted feature ${featureId}`);
+      this.removeCacheFeature(projectPath, featureId);
       return true;
     } catch (error) {
       logger.error(`Failed to delete feature ${featureId}:`, error);
@@ -591,5 +632,86 @@ export class FeatureLoader {
       logger.error(`Failed to sync feature ${feature.id} to app_spec.txt:`, error);
       throw error;
     }
+  }
+
+  private getCacheEntry(projectPath: string): FeatureCacheEntry | null {
+    const entry = this.featureCache.get(projectPath);
+    if (!entry) {
+      return null;
+    }
+    const ageMs = Date.now() - entry.createdAt;
+    if (ageMs > this.featureCacheTtlMs) {
+      this.featureCache.delete(projectPath);
+      return null;
+    }
+    return entry;
+  }
+
+  private setCacheEntry(projectPath: string, features: Feature[]): void {
+    const byId = new Map<string, Feature>();
+    const byTitle = new Map<string, Feature>();
+
+    for (const feature of features) {
+      if (!feature.id) {
+        continue;
+      }
+      byId.set(feature.id, feature);
+      if (feature.title) {
+        byTitle.set(this.normalizeTitle(feature.title), feature);
+      }
+    }
+
+    this.featureCache.set(projectPath, {
+      createdAt: Date.now(),
+      features,
+      byId,
+      byTitle,
+    });
+  }
+
+  private upsertCacheFeature(projectPath: string, feature: Feature): void {
+    const entry = this.getCacheEntry(projectPath);
+    if (!entry) {
+      return;
+    }
+
+    if (!feature.id) {
+      return;
+    }
+
+    const existingFeature = entry.byId.get(feature.id);
+    const existingIndex = entry.features.findIndex((item) => item.id === feature.id);
+    if (existingIndex >= 0) {
+      entry.features[existingIndex] = feature;
+    } else {
+      entry.features = [...entry.features, feature];
+    }
+
+    if (existingFeature?.title && existingFeature.title !== feature.title) {
+      entry.byTitle.delete(this.normalizeTitle(existingFeature.title));
+    }
+
+    entry.byId.set(feature.id, feature);
+    if (feature.title) {
+      entry.byTitle.set(this.normalizeTitle(feature.title), feature);
+    }
+
+    entry.createdAt = Date.now();
+  }
+
+  private removeCacheFeature(projectPath: string, featureId: string): void {
+    const entry = this.getCacheEntry(projectPath);
+    if (!entry) {
+      return;
+    }
+
+    const existing = entry.byId.get(featureId);
+    if (existing?.title) {
+      entry.byTitle.delete(this.normalizeTitle(existing.title));
+    }
+
+    entry.byId.delete(featureId);
+    entry.features = entry.features.filter((feature) => feature.id !== featureId);
+    entry.createdAt = Date.now();
   }
 }

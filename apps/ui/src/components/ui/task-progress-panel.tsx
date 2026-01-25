@@ -29,6 +29,11 @@ interface TaskProgressPanelProps {
   defaultExpanded?: boolean;
   /** Optional TODOs for the active task (deduped/limited upstream) */
   activeTodos?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>;
+  /** Optional per-task TODOs keyed by task ID */
+  taskTodosById?: Record<
+    string,
+    Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+  >;
   /** Override max height class for the task list */
   listMaxHeightClass?: string;
   /** Compact mode for tighter layouts */
@@ -41,6 +46,7 @@ export function TaskProgressPanel({
   className,
   defaultExpanded = true,
   activeTodos,
+  taskTodosById,
   listMaxHeightClass = 'max-h-[200px]',
   compact = false,
 }: TaskProgressPanelProps) {
@@ -49,6 +55,8 @@ export function TaskProgressPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
+  const [showAllTodos, setShowAllTodos] = useState(false);
+  const [hasTodoUpdates, setHasTodoUpdates] = useState(false);
 
   // Load initial tasks from feature's planSpec
   const loadInitialTasks = useCallback(async () => {
@@ -200,7 +208,17 @@ export function TaskProgressPanel({
 
   useEffect(() => {
     setCurrentPhase(null);
+    setShowAllTodos(false);
+    setHasTodoUpdates(false);
   }, [featureId]);
+
+  const hasAnyTodos = !!taskTodosById && Object.keys(taskTodosById).length > 0;
+
+  useEffect(() => {
+    if (hasAnyTodos) {
+      setHasTodoUpdates(true);
+    }
+  }, [hasAnyTodos, taskTodosById]);
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
   const totalCount = tasks.length;
@@ -277,10 +295,38 @@ export function TaskProgressPanel({
                 )}
               </div>
             )}
+            {hasTodoUpdates && !showAllTodos && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className={cn('text-[10px] font-medium text-emerald-300')}>
+                  TodoWrite updated
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {hasAnyTodos && (
+            <button
+              type="button"
+              className={cn(
+                'text-[10px] font-medium px-2 py-1 rounded-md border transition-colors',
+                showAllTodos
+                  ? 'border-primary/40 text-primary bg-primary/10'
+                  : 'border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/40'
+              )}
+              onClick={(event) => {
+                event.preventDefault();
+                setShowAllTodos((prev) => !prev);
+                if (!showAllTodos) {
+                  setHasTodoUpdates(false);
+                }
+              }}
+            >
+              {showAllTodos ? 'Show active TODOs' : 'Show all TODOs'}
+            </button>
+          )}
           {/* Circular Progress (Mini) */}
           <div className="relative h-8 w-8 flex items-center justify-center">
             <svg className="h-full w-full -rotate-90 text-muted/20" viewBox="0 0 24 24">
@@ -342,7 +388,9 @@ export function TaskProgressPanel({
                   startTime && endTime && endTime >= startTime ? endTime - startTime : null;
                 const durationLabel =
                   durationMs && durationMs > 0 ? formatDuration(durationMs) : null;
-                const showTodos = isActive && activeTodos && activeTodos.length > 0;
+                const taskTodos = taskTodosById?.[task.id];
+                const todosForTask = showAllTodos ? taskTodos : isActive ? activeTodos : undefined;
+                const showTodos = !!todosForTask && todosForTask.length > 0;
 
                 return (
                   <div
@@ -441,7 +489,7 @@ export function TaskProgressPanel({
                         {showTodos && (
                           <div className="mt-1.5 space-y-1 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
                             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                              TODO ({activeTodos.length})
+                              TODO ({todosForTask?.length ?? 0})
                             </div>
                             <div
                               className={cn(
@@ -449,13 +497,30 @@ export function TaskProgressPanel({
                                 compact ? 'text-[10px]' : 'text-[11px]'
                               )}
                             >
-                              {activeTodos.map((todo, todoIndex) => (
+                              {todosForTask?.map((todo, todoIndex) => (
                                 <div
                                   key={`${todo.content}-${todoIndex}`}
                                   className="flex items-start gap-2"
                                 >
-                                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                                  <span className="break-words">{todo.content}</span>
+                                  <span
+                                    className={cn(
+                                      'mt-1 h-1.5 w-1.5 rounded-full',
+                                      todo.status === 'completed' && 'bg-emerald-400/80',
+                                      todo.status === 'in_progress' && 'bg-amber-400/80',
+                                      todo.status === 'pending' && 'bg-muted-foreground/60'
+                                    )}
+                                  />
+                                  <span
+                                    className={cn(
+                                      'break-words',
+                                      todo.status === 'completed' &&
+                                        'line-through text-muted-foreground/80',
+                                      todo.status === 'in_progress' && 'text-amber-300',
+                                      todo.status === 'pending' && 'text-muted-foreground'
+                                    )}
+                                  >
+                                    {todo.content}
+                                  </span>
                                 </div>
                               ))}
                             </div>

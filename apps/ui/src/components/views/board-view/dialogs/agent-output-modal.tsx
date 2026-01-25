@@ -31,7 +31,7 @@ import { TaskProgressPanel } from '@/components/ui/task-progress-panel';
 import { Markdown } from '@/components/ui/markdown';
 import { useAppStore } from '@/store/app-store';
 import { extractSummary } from '@/lib/log-parser';
-import { parseAgentContext } from '@/lib/agent-context-parser';
+import { parseAgentContext, extractTodoWritesByTask } from '@/lib/agent-context-parser';
 import { useAgentOutput, useFeature, useFeatureTimeline, useRunningAgents } from '@/hooks/queries';
 import { Button } from '@/components/ui/button';
 import { useQueryClient } from '@tanstack/react-query';
@@ -274,9 +274,15 @@ export function AgentOutputModal({
 
   // Extract summary from output
   const summary = useMemo(() => extractSummary(output), [output]);
+  const currentTaskId =
+    reconcileInfo?.currentTaskId || (featureData as any)?.planSpec?.currentTaskId || null;
+  const taskTodosById = useMemo(() => {
+    if (!output) return {};
+    return extractTodoWritesByTask(output, currentTaskId);
+  }, [output, currentTaskId]);
   const activeTodos = useMemo(() => {
-    if (!output) return [];
-    const todos = parseAgentContext(output).todos;
+    if (!currentTaskId) return [];
+    const todos = taskTodosById[currentTaskId] ?? parseAgentContext(output).todos;
     const seen = new Set<string>();
     const deduped: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }> = [];
     for (const todo of todos) {
@@ -286,7 +292,7 @@ export function AgentOutputModal({
       deduped.push(todo);
     }
     return deduped.slice(0, 10);
-  }, [output]);
+  }, [currentTaskId, taskTodosById, output]);
 
   // Determine the effective view mode - default to summary if available, otherwise parsed
   const effectiveViewMode = viewMode ?? (summary ? 'summary' : 'parsed');
@@ -745,6 +751,7 @@ export function AgentOutputModal({
                 className="flex-1 min-h-0"
                 compact
                 activeTodos={activeTodos}
+                taskTodosById={taskTodosById}
                 listMaxHeightClass="h-full max-h-none"
               />
             ) : (

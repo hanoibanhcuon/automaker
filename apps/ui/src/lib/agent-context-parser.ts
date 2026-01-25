@@ -181,6 +181,89 @@ function extractTodos(content: string): AgentTaskInfo['todos'] {
 }
 
 /**
+ * Extracts TodoWrite entries and maps them to the most recent task ID found in the log.
+ * Falls back to the provided task ID when no task markers are present.
+ */
+export function extractTodoWritesByTask(
+  content: string,
+  fallbackTaskId?: string | null
+): Record<string, AgentTaskInfo['todos']> {
+  const taskTodoMap: Record<string, AgentTaskInfo['todos']> = {};
+
+  if (!content) return taskTodoMap;
+
+  const taskMatches: Array<{ index: number; taskId: string }> = [];
+  const taskRegex = /Starting\s+(T\d{3})/gi;
+  let taskMatch = taskRegex.exec(content);
+  while (taskMatch) {
+    if (typeof taskMatch.index === 'number') {
+      taskMatches.push({ index: taskMatch.index, taskId: taskMatch[1] });
+    }
+    taskMatch = taskRegex.exec(content);
+  }
+
+  const getTaskIdForPosition = (pos: number): string | null => {
+    let chosen: string | null = fallbackTaskId || null;
+    for (const task of taskMatches) {
+      if (task.index <= pos) {
+        chosen = task.taskId;
+      } else {
+        break;
+      }
+    }
+    return chosen;
+  };
+
+  const todoMarkerRegex = /(Tool:\s*TodoWrite|Tool Call:\s*TodoWrite)/gi;
+  let markerMatch = todoMarkerRegex.exec(content);
+
+  while (markerMatch) {
+    const markerIndex = markerMatch.index ?? -1;
+    const taskId = markerIndex >= 0 ? getTaskIdForPosition(markerIndex) : fallbackTaskId || null;
+
+    const inputIdx = content.indexOf('Input:', markerIndex);
+    if (inputIdx !== -1 && inputIdx - markerIndex < 2000) {
+      const jsonStart = content.indexOf('{', inputIdx);
+      if (jsonStart !== -1) {
+        const jsonStr = extractJsonObject(content, jsonStart);
+        if (jsonStr) {
+          try {
+            const parsed = JSON.parse(jsonStr) as {
+              todos?: Array<{ content: string; status: string }>;
+            };
+            if (parsed.todos && Array.isArray(parsed.todos)) {
+              const todos = parsed.todos
+                .filter((item) => item.content && item.status)
+                .map((item) => ({
+                  content: item.content,
+                  status: item.status as 'pending' | 'in_progress' | 'completed',
+                }));
+              if (taskId) {
+                taskTodoMap[taskId] = todos;
+              }
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+
+    markerMatch = todoMarkerRegex.exec(content);
+  }
+
+  // If no task-specific todos found, fallback to last known todo state
+  if (Object.keys(taskTodoMap).length === 0) {
+    const fallbackTodos = extractTodos(content);
+    if (fallbackTaskId && fallbackTodos.length > 0) {
+      taskTodoMap[fallbackTaskId] = fallbackTodos;
+    }
+  }
+
+  return taskTodoMap;
+}
+
+/**
  * Counts tool calls in the content
  */
 function countToolCalls(content: string): number {

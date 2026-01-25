@@ -523,6 +523,7 @@ export function BoardView() {
     handleMoveBackToInProgress,
     handleOpenFollowUp,
     handleSendFollowUp,
+    handleReplanFull,
     handleCommitFeature,
     handleMergeFeature,
     handleCompleteFeature,
@@ -1418,6 +1419,7 @@ export function BoardView() {
                 onForceStop: handleForceStopFeature,
                 onManualVerify: handleManualVerify,
                 onFollowUp: handleOpenFollowUp,
+                onReplanFull: handleReplanFull,
                 onImplement: handleStartImplementation,
                 onComplete: handleCompleteFeature,
                 onViewPlan: (feature) => setViewPlanFeature(feature),
@@ -1461,6 +1463,7 @@ export function BoardView() {
               onManualVerify={handleManualVerify}
               onMoveBackToInProgress={handleMoveBackToInProgress}
               onFollowUp={handleOpenFollowUp}
+              onReplanFull={handleReplanFull}
               onComplete={handleCompleteFeature}
               onImplement={handleStartImplementation}
               onViewPlan={(feature) => setViewPlanFeature(feature)}

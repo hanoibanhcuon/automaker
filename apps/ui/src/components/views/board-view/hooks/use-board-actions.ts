@@ -723,6 +723,62 @@ export function useBoardActions({
     useWorktrees,
   ]);
 
+  const handleReplanFull = useCallback(
+    async (feature: Feature) => {
+      if (!currentProject) return;
+
+      const api = getElectronAPI();
+      if (!api?.autoMode?.replanFeature) {
+        logger.error('Replan feature API not available');
+        toast.error('Replan not available', {
+          description: 'This feature is not available in the current version.',
+        });
+        return;
+      }
+
+      const previousStatus = feature.status;
+      const previousPlanningMode = feature.planningMode;
+
+      const updates = {
+        status: 'in_progress' as const,
+        startedAt: new Date().toISOString(),
+        planningMode: 'full' as PlanningMode,
+      };
+      updateFeature(feature.id, updates);
+
+      try {
+        await persistFeatureUpdate(feature.id, updates);
+        const result = await api.autoMode.replanFeature(
+          currentProject.path,
+          feature.id,
+          useWorktrees
+        );
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to replan feature');
+        }
+      } catch (error) {
+        logger.error('Error replanning feature, rolling back:', error);
+        const rollbackUpdates = {
+          status: previousStatus as 'backlog' | 'in_progress' | 'waiting_approval' | 'verified',
+          planningMode: previousPlanningMode,
+          startedAt: undefined,
+        };
+        updateFeature(feature.id, rollbackUpdates);
+
+        if (isConnectionError(error)) {
+          handleServerOffline();
+          return;
+        }
+
+        toast.error('Failed to replan feature', {
+          description:
+            error instanceof Error ? error.message : 'Server may be offline. Please try again.',
+        });
+      }
+    },
+    [currentProject, persistFeatureUpdate, updateFeature, useWorktrees]
+  );
+
   const handleCommitFeature = useCallback(
     async (feature: Feature) => {
       if (!currentProject) return;
@@ -1030,6 +1086,7 @@ export function useBoardActions({
     handleMoveBackToInProgress,
     handleOpenFollowUp,
     handleSendFollowUp,
+    handleReplanFull,
     handleCommitFeature,
     handleMergeFeature,
     handleCompleteFeature,

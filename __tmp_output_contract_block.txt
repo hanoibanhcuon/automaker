@@ -1,0 +1,10 @@
+## 7) Output Contract (de xuat)
+### 7.1 JSON schema luong parse
+- Moi luong co JSON schema ro (dinh nghia trong libs/types hoac apps/server/lib/schema)
+- Dung outputFormat: json_schema neu provider ho tro
+- Fallback parse: extractJson* + validate schema
+- Repair prompt: 1 lan neu validate fail
+
+### 7.2 Text-only luong khong parse
+- Output chuan la text-only, cam markdown hoac extra text neu khong can thiet
+- Neu can dinh dang (vi du: Acceptance criteria) thi quy uoc noi bo ro rang

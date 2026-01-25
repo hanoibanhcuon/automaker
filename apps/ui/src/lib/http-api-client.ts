@@ -1675,8 +1675,11 @@ export class HttpApiClient implements ElectronAPI {
       this.post('/api/features/resume-pending', { projectPath, featureId, useWorktrees }),
     recoveryCenter: (projectPath: string, includeAll?: boolean) =>
       this.post('/api/features/recovery-center', { projectPath, includeAll }),
-    getTimeline: (projectPath: string, featureId: string) =>
-      this.post('/api/features/timeline', { projectPath, featureId }),
+    getTimeline: (
+      projectPath: string,
+      featureId: string,
+      options?: { includeFileActivity?: boolean }
+    ) => this.post('/api/features/timeline', { projectPath, featureId, ...options }),
     generateTitle: (description: string, projectPath?: string) =>
       this.post('/api/features/generate-title', { description, projectPath }),
     bulkUpdate: (projectPath: string, featureIds: string[], updates: Partial<Feature>) =>
@@ -1706,6 +1709,8 @@ export class HttpApiClient implements ElectronAPI {
         useWorktrees,
         worktreePath,
       }),
+    replanFeature: (projectPath: string, featureId: string, useWorktrees?: boolean) =>
+      this.post('/api/auto-mode/replan-feature', { projectPath, featureId, useWorktrees }),
     verifyFeature: (projectPath: string, featureId: string) =>
       this.post('/api/auto-mode/verify-feature', { projectPath, featureId }),
     resumeFeature: (projectPath: string, featureId: string, useWorktrees?: boolean) =>

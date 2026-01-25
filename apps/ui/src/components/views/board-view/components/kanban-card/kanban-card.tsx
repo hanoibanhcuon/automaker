@@ -49,6 +49,7 @@ interface KanbanCardProps {
   onMoveBackToInProgress?: () => void;
   onFollowUp?: () => void;
   onImplement?: () => void;
+  onReplanFull?: () => void;
   onComplete?: () => void;
   onViewPlan?: () => void;
   onApprovePlan?: () => void;
@@ -84,6 +85,7 @@ export const KanbanCard = memo(function KanbanCard({
   onMoveBackToInProgress: _onMoveBackToInProgress,
   onFollowUp,
   onImplement,
+  onReplanFull,
   onComplete,
   onViewPlan,
   onApprovePlan,
@@ -279,6 +281,7 @@ export const KanbanCard = memo(function KanbanCard({
           onForceStop={onForceStop}
           onManualVerify={onManualVerify}
           onFollowUp={onFollowUp}
+          onReplanFull={onReplanFull}
           onImplement={onImplement}
           onComplete={onComplete}
           onViewPlan={onViewPlan}

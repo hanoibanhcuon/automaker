@@ -27,6 +27,7 @@ interface CardActionsProps {
   onForceStop?: () => void;
   onManualVerify?: () => void;
   onFollowUp?: () => void;
+  onReplanFull?: () => void;
   onImplement?: () => void;
   onComplete?: () => void;
   onViewPlan?: () => void;
@@ -46,6 +47,7 @@ export const CardActions = memo(function CardActions({
   onForceStop,
   onManualVerify,
   onFollowUp,
+  onReplanFull,
   onImplement,
   onComplete,
   onViewPlan,
@@ -228,6 +230,22 @@ export const CardActions = memo(function CardActions({
             >
               <Wand2 className="w-3 h-3 mr-1 shrink-0" />
               <span className="truncate">Refine</span>
+            </Button>
+          )}
+          {onReplanFull && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="flex-1 h-7 text-[11px] min-w-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReplanFull();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              data-testid={`replan-full-${feature.id}`}
+            >
+              <RotateCcw className="w-3 h-3 mr-1 shrink-0" />
+              <span className="truncate">Replan Full</span>
             </Button>
           )}
           {/* Show Verify button if PR was created (changes are committed), otherwise show Mark as Verified button */}

@@ -38,6 +38,7 @@ export interface RowActionHandlers {
   onForceStop?: () => void;
   onManualVerify?: () => void;
   onFollowUp?: () => void;
+  onReplanFull?: () => void;
   onImplement?: () => void;
   onComplete?: () => void;
   onViewPlan?: () => void;
@@ -222,7 +223,7 @@ function getSecondaryActions(
  * Actions by status:
  * - Backlog: Edit, Delete, Make (implement), View Plan, Spawn Sub-Task
  * - In Progress: View Output, Resume, Approve Plan, Edit, Spawn Sub-Task, Delete
- * - Waiting Approval: Refine (inline secondary), Verify, View Logs, View PR, Edit, Spawn Sub-Task, Delete
+ * - Waiting Approval: Refine (inline secondary), Replan Full, Verify, View Logs, View PR, Edit, Spawn Sub-Task, Delete
  * - Verified: View Logs, View PR, View Branch, Complete, Edit, Spawn Sub-Task, Delete
  * - Running (auto task): View Logs, Approve Plan, Edit, Spawn Sub-Task, Force Stop
  * - Pipeline statuses: View Logs, Edit, Spawn Sub-Task, Delete
@@ -472,6 +473,14 @@ export const RowActions = memo(function RowActions({
               {handlers.onFollowUp && (
                 <MenuItem icon={Wand2} label="Refine" onClick={withClose(handlers.onFollowUp)} />
               )}
+              {handlers.onReplanFull && (
+                <MenuItem
+                  icon={RotateCcw}
+                  label="Replan Full"
+                  onClick={withClose(handlers.onReplanFull)}
+                  variant="warning"
+                />
+              )}
               {feature.prUrl && (
                 <MenuItem
                   icon={ExternalLink}
@@ -608,6 +617,7 @@ export function createRowActionHandlers(
     viewPlan?: (id: string) => void;
     approvePlan?: (id: string) => void;
     spawnTask?: (id: string) => void;
+    replanFull?: (id: string) => void;
   }
 ): RowActionHandlers {
   return {
@@ -619,6 +629,7 @@ export function createRowActionHandlers(
     onForceStop: actions.forceStop ? () => actions.forceStop!(featureId) : undefined,
     onManualVerify: actions.manualVerify ? () => actions.manualVerify!(featureId) : undefined,
     onFollowUp: actions.followUp ? () => actions.followUp!(featureId) : undefined,
+    onReplanFull: actions.replanFull ? () => actions.replanFull!(featureId) : undefined,
     onImplement: actions.implement ? () => actions.implement!(featureId) : undefined,
     onComplete: actions.complete ? () => actions.complete!(featureId) : undefined,
     onViewPlan: actions.viewPlan ? () => actions.viewPlan!(featureId) : undefined,

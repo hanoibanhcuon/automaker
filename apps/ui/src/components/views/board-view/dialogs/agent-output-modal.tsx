@@ -29,6 +29,7 @@ import { LogViewer } from '@/components/ui/log-viewer';
 import { GitDiffPanel } from '@/components/ui/git-diff-panel';
 import { TaskProgressPanel } from '@/components/ui/task-progress-panel';
 import { Markdown } from '@/components/ui/markdown';
+import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/store/app-store';
 import { extractSummary } from '@/lib/log-parser';
 import { parseAgentContext, extractTodoWritesByTask } from '@/lib/agent-context-parser';
@@ -78,6 +79,9 @@ export function AgentOutputModal({
   const [isReconciling, setIsReconciling] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  const [isReplanning, setIsReplanning] = useState(false);
+  const [showFileActivity, setShowFileActivity] = useState(false);
+  const fileActivityTouchedRef = useRef(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>('split');
@@ -140,10 +144,13 @@ export function AgentOutputModal({
     enabled: open && !!resolvedProjectPath && !isBacklogPlan,
     pollingInterval: false,
   });
+  const planTaskCount = (featureData as any)?.planSpec?.tasks?.length ?? 0;
+  const hasPlanTasks = planTaskCount > 0;
 
   useEffect(() => {
     setReconcileInfo(null);
     lastAutoReconcileRef.current = '';
+    fileActivityTouchedRef.current = false;
   }, [featureId, resolvedProjectPath]);
 
   useEffect(() => {
@@ -159,6 +166,12 @@ export function AgentOutputModal({
       setStreamedContent('');
     }
   }, [open, featureId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (fileActivityTouchedRef.current) return;
+    setShowFileActivity(!hasPlanTasks);
+  }, [open, hasPlanTasks]);
 
   const handleReconcile = useCallback(
     async (source: 'auto' | 'manual' = 'manual') => {
@@ -244,6 +257,38 @@ export function AgentOutputModal({
     }
   }, [resolvedProjectPath, featureId, isBacklogPlan, isResuming, useWorktrees, queryClient]);
 
+  const handleReplanFull = useCallback(async () => {
+    if (!resolvedProjectPath || !featureId || isBacklogPlan) return;
+    if (isReplanning) return;
+    try {
+      setIsReplanning(true);
+      const api = getElectronAPI();
+      const result = await api.autoMode?.replanFeature?.(
+        resolvedProjectPath,
+        featureId,
+        useWorktrees
+      );
+      if (result?.success) {
+        setReconcileInfo(null);
+        fileActivityTouchedRef.current = false;
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'output'],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
+        });
+      }
+    } finally {
+      setIsReplanning(false);
+    }
+  }, [resolvedProjectPath, featureId, isBacklogPlan, isReplanning, useWorktrees, queryClient]);
+
   const handleForceStop = useCallback(async () => {
     if (!featureId || isBacklogPlan) return;
     if (isStopping) return;
@@ -304,6 +349,7 @@ export function AgentOutputModal({
     featureId,
     {
       enabled: open && effectiveViewMode === 'timeline' && !!resolvedProjectPath && !isBacklogPlan,
+      includeFileActivity: showFileActivity,
       pollingInterval: false,
     }
   );
@@ -710,6 +756,20 @@ export function AgentOutputModal({
                   </Button>
                   <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleReplanFull}
+                    disabled={isReplanning || isFeatureRunning}
+                    data-testid="replan-full"
+                  >
+                    <RotateCcw
+                      className={`w-3.5 h-3.5 mr-1 ${isReplanning ? 'animate-spin' : ''}`}
+                    />
+                    Replan Full
+                  </Button>
+                  <Button
+                    type="button"
                     variant="default"
                     size="sm"
                     className="h-7 px-2 text-xs"
@@ -883,6 +943,16 @@ export function AgentOutputModal({
               </div>
             ) : effectiveViewMode === 'timeline' ? (
               <div className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-card border border-border/50 rounded-lg p-4 scrollbar-visible">
+                <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground mb-3">
+                  <span>File activity</span>
+                  <Switch
+                    checked={showFileActivity}
+                    onCheckedChange={(checked) => {
+                      fileActivityTouchedRef.current = true;
+                      setShowFileActivity(checked);
+                    }}
+                  />
+                </div>
                 {isTimelineLoading ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Spinner size="lg" className="mr-2" />
@@ -896,7 +966,12 @@ export function AgentOutputModal({
                   <div className="space-y-4">
                     {timelineEntries.map((entry) => (
                       <div key={entry.id} className="flex gap-3">
-                        <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/60 shrink-0" />
+                        <div
+                          className={cn(
+                            'mt-1 h-2.5 w-2.5 rounded-full shrink-0',
+                            entry.type === 'file_changed' ? 'bg-emerald-500/60' : 'bg-primary/60'
+                          )}
+                        />
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <span className="font-medium text-foreground">{entry.title}</span>

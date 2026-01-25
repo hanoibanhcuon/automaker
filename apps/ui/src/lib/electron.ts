@@ -570,7 +570,8 @@ export interface FeaturesAPI {
   }>;
   getTimeline: (
     projectPath: string,
-    featureId: string
+    featureId: string,
+    options?: { includeFileActivity?: boolean }
   ) => Promise<{
     success: boolean;
     timeline?: Array<{
@@ -618,6 +619,11 @@ export interface AutoModeAPI {
     featureId: string,
     useWorktrees?: boolean,
     worktreePath?: string
+  ) => Promise<{ success: boolean; passes?: boolean; error?: string }>;
+  replanFeature: (
+    projectPath: string,
+    featureId: string,
+    useWorktrees?: boolean
   ) => Promise<{ success: boolean; passes?: boolean; error?: string }>;
   verifyFeature: (
     projectPath: string,
@@ -2291,6 +2297,21 @@ function createMockAutoModeAPI(): AutoModeAPI {
       return { success: true, passes: true };
     },
 
+    replanFeature: async (projectPath: string, featureId: string, useWorktrees?: boolean) => {
+      if (mockRunningFeatures.has(featureId)) {
+        return {
+          success: false,
+          error: `Feature ${featureId} is already running`,
+        };
+      }
+
+      console.log(`[Mock] Replanning feature ${featureId} with useWorktrees: ${useWorktrees}`);
+      mockRunningFeatures.add(featureId);
+      simulateAutoModeLoop(projectPath, featureId);
+
+      return { success: true, passes: true };
+    },
+
     verifyFeature: async (projectPath: string, featureId: string) => {
       if (mockRunningFeatures.has(featureId)) {
         return {
@@ -3399,7 +3420,11 @@ function createMockFeaturesAPI(): FeaturesAPI {
       };
     },
 
-    getTimeline: async (_projectPath: string, _featureId: string) => {
+    getTimeline: async (
+      _projectPath: string,
+      _featureId: string,
+      _options?: { includeFileActivity?: boolean }
+    ) => {
       console.log('[Mock] Getting timeline');
       return {
         success: true,

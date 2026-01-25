@@ -14,7 +14,13 @@ import type { Feature } from '@/store/app-store';
 
 export interface FeatureTimelineEntry {
   id: string;
-  type: 'feature_started' | 'plan_generated' | 'plan_approved' | 'task_started' | 'task_completed';
+  type:
+    | 'feature_started'
+    | 'plan_generated'
+    | 'plan_approved'
+    | 'task_started'
+    | 'task_completed'
+    | 'file_changed';
   title: string;
   detail?: string;
   timestamp: string;
@@ -179,6 +185,7 @@ export interface RecoveryCenterSummary {
 interface UseTimelineOptions {
   enabled?: boolean;
   pollingInterval?: number | false;
+  includeFileActivity?: boolean;
 }
 
 export function useFeatureTimeline(
@@ -186,14 +193,19 @@ export function useFeatureTimeline(
   featureId: string | undefined,
   options: UseTimelineOptions = {}
 ) {
-  const { enabled = true, pollingInterval } = options;
+  const { enabled = true, pollingInterval, includeFileActivity } = options;
 
   return useQuery({
-    queryKey: queryKeys.features.timeline(projectPath ?? '', featureId ?? ''),
+    queryKey: [
+      ...queryKeys.features.timeline(projectPath ?? '', featureId ?? ''),
+      includeFileActivity ? 'file-activity' : 'no-file-activity',
+    ],
     queryFn: async (): Promise<FeatureTimelineEntry[]> => {
       if (!projectPath || !featureId) throw new Error('Missing project path or feature ID');
       const api = getElectronAPI();
-      const result = await api.features?.getTimeline?.(projectPath, featureId);
+      const result = await api.features?.getTimeline?.(projectPath, featureId, {
+        includeFileActivity,
+      });
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to fetch timeline');
       }

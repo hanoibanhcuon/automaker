@@ -478,6 +478,16 @@ export interface AutoModeAPI {
     error?: string;
   }>;
 
+  replanFeature: (
+    projectPath: string,
+    featureId: string,
+    useWorktrees?: boolean
+  ) => Promise<{
+    success: boolean;
+    passes?: boolean;
+    error?: string;
+  }>;
+
   verifyFeature: (
     projectPath: string,
     featureId: string

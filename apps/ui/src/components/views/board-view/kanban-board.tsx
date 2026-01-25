@@ -40,6 +40,7 @@ interface KanbanBoardProps {
   onManualVerify: (feature: Feature) => void;
   onMoveBackToInProgress: (feature: Feature) => void;
   onFollowUp: (feature: Feature) => void;
+  onReplanFull?: (feature: Feature) => void;
   onComplete: (feature: Feature) => void;
   onImplement: (feature: Feature) => void;
   onViewPlan: (feature: Feature) => void;
@@ -277,6 +278,7 @@ export function KanbanBoard({
   onManualVerify,
   onMoveBackToInProgress,
   onFollowUp,
+  onReplanFull,
   onComplete,
   onImplement,
   onViewPlan,
@@ -557,6 +559,9 @@ export function KanbanBoard({
                                       onManualVerify={() => onManualVerify(feature)}
                                       onMoveBackToInProgress={() => onMoveBackToInProgress(feature)}
                                       onFollowUp={() => onFollowUp(feature)}
+                                      onReplanFull={
+                                        onReplanFull ? () => onReplanFull(feature) : undefined
+                                      }
                                       onComplete={() => onComplete(feature)}
                                       onImplement={() => onImplement(feature)}
                                       onViewPlan={() => onViewPlan(feature)}
@@ -602,6 +607,9 @@ export function KanbanBoard({
                                 onManualVerify={() => onManualVerify(feature)}
                                 onMoveBackToInProgress={() => onMoveBackToInProgress(feature)}
                                 onFollowUp={() => onFollowUp(feature)}
+                                onReplanFull={
+                                  onReplanFull ? () => onReplanFull(feature) : undefined
+                                }
                                 onComplete={() => onComplete(feature)}
                                 onImplement={() => onImplement(feature)}
                                 onViewPlan={() => onViewPlan(feature)}

@@ -39,6 +39,7 @@ export interface ListViewActionHandlers {
   onForceStop?: (feature: Feature) => void;
   onManualVerify?: (feature: Feature) => void;
   onFollowUp?: (feature: Feature) => void;
+  onReplanFull?: (feature: Feature) => void;
   onImplement?: (feature: Feature) => void;
   onComplete?: (feature: Feature) => void;
   onViewPlan?: (feature: Feature) => void;
@@ -332,6 +333,12 @@ export const ListView = memo(function ListView({
           ? (id) => {
               const f = allFeatures.find((f) => f.id === id);
               if (f) actionHandlers.onFollowUp?.(f);
+            }
+          : undefined,
+        replanFull: actionHandlers.onReplanFull
+          ? (id) => {
+              const f = allFeatures.find((f) => f.id === id);
+              if (f) actionHandlers.onReplanFull?.(f);
             }
           : undefined,
         implement: actionHandlers.onImplement

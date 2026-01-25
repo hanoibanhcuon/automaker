@@ -2171,6 +2171,76 @@ Address the follow-up instructions above. Review the previous work and make the 
   }
 
   /**
+   * Replan a feature from scratch using Full planning mode
+   * - Resets planSpec and clears previous output context
+   * - Forces planningMode = full
+   * - Starts a fresh execution (no resume)
+   */
+  async replanFeature(projectPath: string, featureId: string, useWorktrees = false): Promise<void> {
+    validateWorkingDirectory(projectPath);
+
+    if (this.runningFeatures.has(featureId)) {
+      throw new Error(`Feature ${featureId} is already running`);
+    }
+
+    const featureDir = getFeatureDir(projectPath, featureId);
+    const featurePath = path.join(featureDir, 'feature.json');
+
+    const result = await readJsonWithRecovery<Feature | null>(featurePath, null, {
+      maxBackups: DEFAULT_BACKUP_COUNT,
+      autoRestore: true,
+    });
+
+    logRecoveryWarning(result, `Feature ${featureId}`, logger);
+    const feature = result.data;
+
+    if (!feature) {
+      throw new Error(`Feature ${featureId} not found or could not be recovered`);
+    }
+
+    const nextVersion = (feature.planSpec?.version ?? 0) + 1;
+    const now = new Date().toISOString();
+
+    feature.planningMode = 'full';
+    feature.planSpec = {
+      status: 'pending',
+      content: undefined,
+      version: nextVersion,
+      generatedAt: undefined,
+      approvedAt: undefined,
+      reviewedByUser: false,
+      tasksCompleted: 0,
+      tasksTotal: 0,
+      currentTaskId: undefined,
+      tasks: [],
+    } as any;
+
+    feature.status = 'in_progress';
+    feature.startedAt = now;
+    feature.updatedAt = now;
+    feature.justFinishedAt = undefined;
+    feature.error = undefined;
+    feature.summary = undefined;
+
+    // Clear previous output context to force a fresh run
+    const outputPath = path.join(featureDir, 'agent-output.md');
+    const rawOutputPath = path.join(featureDir, 'raw-output.jsonl');
+    try {
+      await secureFs.unlink(outputPath);
+    } catch {}
+    try {
+      await secureFs.unlink(rawOutputPath);
+    } catch {}
+
+    await atomicWriteJson(featurePath, feature, { backupCount: DEFAULT_BACKUP_COUNT });
+
+    // Start execution in background
+    this.executeFeature(projectPath, featureId, useWorktrees, false).catch((error) => {
+      logger.error(`Replan ${featureId} error:`, error);
+    });
+  }
+
+  /**
    * Verify a feature's implementation
    */
   async verifyFeature(projectPath: string, featureId: string): Promise<boolean> {

@@ -20,6 +20,7 @@ import { createFollowUpFeatureHandler } from './routes/follow-up-feature.js';
 import { createCommitFeatureHandler } from './routes/commit-feature.js';
 import { createApprovePlanHandler } from './routes/approve-plan.js';
 import { createResumeInterruptedHandler } from './routes/resume-interrupted.js';
+import { createReplanFeatureHandler } from './routes/replan-feature.js';
 
 export function createAutoModeRoutes(autoModeService: AutoModeService): Router {
   const router = Router();
@@ -34,6 +35,11 @@ export function createAutoModeRoutes(autoModeService: AutoModeService): Router {
     '/run-feature',
     validatePathParams('projectPath'),
     createRunFeatureHandler(autoModeService)
+  );
+  router.post(
+    '/replan-feature',
+    validatePathParams('projectPath'),
+    createReplanFeatureHandler(autoModeService)
   );
   router.post(
     '/verify-feature',

@@ -16,7 +16,7 @@ import { Feature, ModelAlias, ThinkingLevel, PlanningMode } from '@/store/app-st
 import { TestingTabContent, PrioritySelect, PlanningModeSelect, WorkModeSelector } from '../shared';
 import type { WorkMode } from '../shared';
 import { PhaseModelSelector } from '@/components/views/settings-view/model-defaults/phase-model-selector';
-import { isCursorModel, isClaudeModel, type PhaseModelEntry } from '@automaker/types';
+import { isCursorModel, supportsPlanningMode, type PhaseModelEntry } from '@automaker/types';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -211,7 +211,7 @@ export function MassEditDialog({
   const hasAnyApply = Object.values(applyState).some(Boolean);
   const isCurrentModelCursor = isCursorModel(model);
   const modelAllowsThinking = !isCurrentModelCursor && modelSupportsThinking(model);
-  const modelSupportsPlanningMode = isClaudeModel(model);
+  const modelSupportsPlanningMode = supportsPlanningMode(model);
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
@@ -304,7 +304,7 @@ export function MassEditDialog({
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Planning modes are only available for Claude Provider</p>
+                  <p>Planning modes are not available for Cursor models</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

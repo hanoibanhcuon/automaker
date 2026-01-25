@@ -245,6 +245,7 @@ export {
   PROVIDER_PREFIXES,
   isCursorModel,
   isClaudeModel,
+  supportsPlanningMode,
   isCodexModel,
   isOpencodeModel,
   getModelProvider,

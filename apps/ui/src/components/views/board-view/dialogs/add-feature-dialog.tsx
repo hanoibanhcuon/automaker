@@ -36,7 +36,7 @@ import {
   Feature,
 } from '@/store/app-store';
 import type { ReasoningEffort, PhaseModelEntry, AgentModel } from '@automaker/types';
-import { supportsReasoningEffort, isClaudeModel } from '@automaker/types';
+import { supportsReasoningEffort, supportsPlanningMode } from '@automaker/types';
 import {
   TestingTabContent,
   PrioritySelector,
@@ -172,8 +172,8 @@ export function AddFeatureDialog({
   // Model selection state
   const [modelEntry, setModelEntry] = useState<PhaseModelEntry>({ model: 'claude-opus' });
 
-  // Check if current model supports planning mode (Claude/Anthropic only)
-  const modelSupportsPlanningMode = isClaudeModel(modelEntry.model);
+  // Check if current model supports planning mode
+  const modelSupportsPlanningMode = supportsPlanningMode(modelEntry.model);
 
   // Planning mode state
   const [planningMode, setPlanningMode] = useState<PlanningMode>('skip');
@@ -569,7 +569,7 @@ export function AddFeatureDialog({
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Planning modes are only available for Claude Provider</p>
+                        <p>Planning modes are not available for Cursor models</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

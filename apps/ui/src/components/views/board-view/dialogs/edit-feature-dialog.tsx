@@ -42,7 +42,7 @@ import type { WorkMode } from '../shared';
 import { PhaseModelSelector } from '@/components/views/settings-view/model-defaults/phase-model-selector';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DependencyTreeDialog } from './dependency-tree-dialog';
-import { isClaudeModel, supportsReasoningEffort } from '@automaker/types';
+import { supportsPlanningMode, supportsReasoningEffort } from '@automaker/types';
 
 const logger = createLogger('EditFeatureDialog');
 
@@ -117,8 +117,8 @@ export function EditFeatureDialog({
     providerId: feature?.providerId,
   }));
 
-  // Check if current model supports planning mode (Claude/Anthropic only)
-  const modelSupportsPlanningMode = isClaudeModel(modelEntry.model);
+  // Check if current model supports planning mode
+  const modelSupportsPlanningMode = supportsPlanningMode(modelEntry.model);
 
   // Track the source of description changes for history
   const [descriptionChangeSource, setDescriptionChangeSource] = useState<
@@ -475,7 +475,7 @@ export function EditFeatureDialog({
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Planning modes are only available for Claude Provider</p>
+                        <p>Planning modes are not available for Cursor models</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

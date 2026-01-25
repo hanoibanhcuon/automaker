@@ -63,6 +63,18 @@ export function isClaudeModel(model: string | undefined | null): boolean {
 }
 
 /**
+ * Check if a model supports planning modes
+ *
+ * Planning modes are currently disabled only for Cursor models, which use
+ * a different agent pipeline. All other providers are allowed to use
+ * planning prompts (lite/spec/full) as long as the model can follow them.
+ */
+export function supportsPlanningMode(model: string | undefined | null): boolean {
+  if (!model || typeof model !== 'string') return true;
+  return !isCursorModel(model);
+}
+
+/**
  * Check if a model string represents a Codex/OpenAI model
  *
  * @param model - Model string to check (e.g., "gpt-5.2", "o1", "codex-gpt-5.2")

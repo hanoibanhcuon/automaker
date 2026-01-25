@@ -235,8 +235,21 @@ export function TaskProgressPanel({
     return `${seconds}s`;
   };
 
-  if (isLoading || tasks.length === 0) {
+  if (isLoading) {
     return null;
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div
+        className={cn(
+          'rounded-lg border border-border/50 bg-card/40 p-3 text-xs text-muted-foreground',
+          className
+        )}
+      >
+        No execution tasks found. The plan output may be missing the required tasks format.
+      </div>
+    );
   }
 
   return (

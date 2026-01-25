@@ -146,6 +146,8 @@ export function AgentOutputModal({
   });
   const planTaskCount = (featureData as any)?.planSpec?.tasks?.length ?? 0;
   const hasPlanTasks = planTaskCount > 0;
+  const planContentAvailable = Boolean((featureData as any)?.planSpec?.content);
+  const planMissingTasks = planContentAvailable && !hasPlanTasks;
 
   useEffect(() => {
     setReconcileInfo(null);
@@ -709,6 +711,11 @@ export function AgentOutputModal({
                           Missing files: {reconcileInfo.missingFiles.length}
                         </span>
                       )}
+                      {planMissingTasks && (
+                        <span className="text-amber-500 font-semibold">
+                          Plan missing tasks (invalid format)
+                        </span>
+                      )}
                       {reconcileInfo.statusAdjusted && (
                         <span className="text-amber-500 font-semibold">Moved back to backlog</span>
                       )}
@@ -720,9 +727,16 @@ export function AgentOutputModal({
                       )}
                     </>
                   ) : (
-                    <span className="truncate font-semibold text-foreground">
-                      Plan health: not available
-                    </span>
+                    <>
+                      <span className="truncate font-semibold text-foreground">
+                        Plan health: not available
+                      </span>
+                      {planMissingTasks && (
+                        <span className="text-amber-500 font-semibold">
+                          Plan missing tasks (invalid format)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

@@ -147,15 +147,21 @@ function parseTasksFromSpec(specContent: string): ParsedTask[] {
   // Extract content within ```tasks ... ``` block
   const tasksBlockMatch = specContent.match(/```tasks\s*([\s\S]*?)```/);
   if (!tasksBlockMatch) {
-    // Try fallback: look for task lines anywhere in content
-    const taskLines = specContent.match(/- \[ \] T\d{3}:.*$/gm);
-    if (!taskLines) {
-      return tasks;
-    }
-    // Parse fallback task lines
+    // Try fallback: scan all lines for task-like patterns
+    const lines = specContent.split('\n');
     let currentPhase: string | undefined;
-    for (const line of taskLines) {
-      const parsed = parseTaskLine(line, currentPhase);
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      const phaseMatch = trimmedLine.match(/^##\s*(.+)$/);
+      if (phaseMatch) {
+        currentPhase = phaseMatch[1].trim();
+        continue;
+      }
+
+      if (!/T\d+|Task\s*\d+/i.test(trimmedLine)) continue;
+      const parsed = parseTaskLine(trimmedLine, currentPhase);
       if (parsed) {
         tasks.push(parsed);
       }
@@ -179,7 +185,7 @@ function parseTasksFromSpec(specContent: string): ParsedTask[] {
     }
 
     // Check for task line
-    if (trimmedLine.startsWith('- [ ]')) {
+    if (/T\d+|Task\s*\d+/i.test(trimmedLine)) {
       const parsed = parseTaskLine(trimmedLine, currentPhase);
       if (parsed) {
         tasks.push(parsed);
@@ -195,24 +201,36 @@ function parseTasksFromSpec(specContent: string): ParsedTask[] {
  * Format: - [ ] T###: Description | File: path/to/file
  */
 function parseTaskLine(line: string, currentPhase?: string): ParsedTask | null {
-  // Match pattern: - [ ] T###: Description | File: path
-  const taskMatch = line.match(/- \[ \] (T\d{3}):\s*([^|]+)(?:\|\s*File:\s*(.+))?$/);
+  const trimmed = line.trim();
+
+  // Normalize prefix variants (checkbox, bullets, numbered lists)
+  const normalized = trimmed
+    .replace(/^-\s*\[\s*\]\s*/i, '')
+    .replace(/^\d+\.\s*/, '')
+    .replace(/^-\s*/, '')
+    .trim();
+
+  const normalizeId = (rawId: string) => {
+    const digits = rawId.replace(/\D/g, '');
+    if (!digits) return null;
+    return `T${digits.padStart(3, '0')}`;
+  };
+
+  // Match pattern: T### / T# / Task # with optional File
+  const taskMatch =
+    normalized.match(/^(T\d+)\s*[:\-]\s*([^|]+)(?:\|\s*File:\s*(.+))?$/i) ||
+    normalized.match(/^(?:Task)\s*(\d+)\s*[:\-]\s*([^|]+)(?:\|\s*File:\s*(.+))?$/i);
+
   if (!taskMatch) {
-    // Try simpler pattern without file
-    const simpleMatch = line.match(/- \[ \] (T\d{3}):\s*(.+)$/);
-    if (simpleMatch) {
-      return {
-        id: simpleMatch[1],
-        description: simpleMatch[2].trim(),
-        phase: currentPhase,
-        status: 'pending',
-      };
-    }
     return null;
   }
 
+  const rawId = taskMatch[1];
+  const normalizedId = normalizeId(rawId);
+  if (!normalizedId) return null;
+
   return {
-    id: taskMatch[1],
+    id: normalizedId,
     description: taskMatch[2].trim(),
     filePath: taskMatch[3]?.trim(),
     phase: currentPhase,
@@ -4306,6 +4324,35 @@ After generating the revised spec, output:
           // The msg.result is just a summary which would lose all tool use details
           // Just ensure final write happens
           scheduleWrite();
+        }
+      }
+
+      // Fallback: if spec marker was never detected, try to recover planSpec from raw output
+      if (planningModeRequiresApproval && !specDetected) {
+        const fallbackContent = responseText.trim();
+        const hasExistingPlan =
+          feature.planSpec?.content ||
+          (Array.isArray(feature.planSpec?.tasks) && feature.planSpec?.tasks.length > 0);
+        if (fallbackContent && !hasExistingPlan) {
+          const parsedTasks = parseTasksFromSpec(fallbackContent);
+          const tasksTotal = parsedTasks.length;
+          const now = new Date().toISOString();
+
+          logger.warn(
+            `Spec marker missing for feature ${featureId}; falling back to parsed tasks (${tasksTotal})`
+          );
+
+          await this.updateFeaturePlanSpec(projectPath, featureId, {
+            status: 'approved',
+            content: fallbackContent,
+            version: 1,
+            generatedAt: now,
+            approvedAt: now,
+            reviewedByUser: false,
+            tasks: parsedTasks,
+            tasksTotal,
+            tasksCompleted: 0,
+          });
         }
       }
 

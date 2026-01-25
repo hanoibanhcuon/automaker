@@ -23,16 +23,117 @@ export interface PlanReconcileResult {
   missingFiles: string[];
 }
 
+function normalizeTaskId(rawId: string): string | null {
+  const digits = rawId.replace(/\D/g, '');
+  if (!digits) return null;
+  return `T${digits.padStart(3, '0')}`;
+}
+
+function parseTaskLineFlexible(line: string, currentPhase?: string): ParsedTask | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed
+    .replace(/^-\s*\[\s*\]\s*/i, '')
+    .replace(/^\d+\.\s*/, '')
+    .replace(/^-\s*/, '')
+    .trim();
+
+  const taskMatch =
+    normalized.match(/^(T\d+)\s*[:\-]\s*([^|]+)(?:\|\s*File:\s*(.+))?$/i) ||
+    normalized.match(/^(?:Task)\s*(\d+)\s*[:\-]\s*([^|]+)(?:\|\s*File:\s*(.+))?$/i);
+
+  if (!taskMatch) return null;
+
+  const normalizedId = normalizeTaskId(taskMatch[1]);
+  if (!normalizedId) return null;
+
+  return {
+    id: normalizedId,
+    description: taskMatch[2].trim(),
+    filePath: taskMatch[3]?.trim(),
+    phase: currentPhase,
+    status: 'pending',
+  };
+}
+
+function parseTasksFromContent(content: string): ParsedTask[] {
+  const tasks: ParsedTask[] = [];
+  if (!content) return tasks;
+
+  const tasksBlockMatch = content.match(/```tasks\s*([\s\S]*?)```/);
+  const source = tasksBlockMatch ? tasksBlockMatch[1] : content;
+  const lines = source.split('\n');
+
+  let currentPhase: string | undefined;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const phaseMatch = trimmed.match(/^##\s*(.+)$/);
+    if (phaseMatch) {
+      currentPhase = phaseMatch[1].trim();
+      continue;
+    }
+
+    if (!/T\d+|Task\s*\d+/i.test(trimmed)) continue;
+    const parsed = parseTaskLineFlexible(trimmed, currentPhase);
+    if (parsed) tasks.push(parsed);
+  }
+
+  return tasks;
+}
+
 export async function reconcileFeaturePlanSpec(
   projectPath: string,
   feature: Feature
 ): Promise<PlanReconcileResult | null> {
-  const planSpec = (feature.planSpec as { tasks?: ParsedTask[] }) || null;
-  if (!planSpec?.tasks || planSpec.tasks.length === 0) {
+  const planSpec = (feature.planSpec as { tasks?: ParsedTask[]; content?: string }) || null;
+  if (!planSpec) {
+    (feature as any).planSpec = {};
+  }
+  const resolvedPlanSpec =
+    (feature.planSpec as { tasks?: ParsedTask[]; content?: string }) || planSpec;
+  if (
+    (!resolvedPlanSpec?.tasks || resolvedPlanSpec.tasks.length === 0) &&
+    resolvedPlanSpec?.content
+  ) {
+    const parsedTasks = parseTasksFromContent(resolvedPlanSpec.content);
+    if (parsedTasks.length > 0) {
+      resolvedPlanSpec.tasks = parsedTasks;
+    }
+  }
+
+  if (
+    (!resolvedPlanSpec?.tasks || resolvedPlanSpec.tasks.length === 0) &&
+    !resolvedPlanSpec?.content
+  ) {
+    try {
+      const outputPath = path.join(
+        projectPath,
+        '.automaker',
+        'features',
+        feature.id,
+        'agent-output.md'
+      );
+      const output = (await secureFs.readFile(outputPath, 'utf-8')) as string;
+      const markerIndex = output.indexOf('[SPEC_GENERATED]');
+      const planContent = markerIndex > 0 ? output.substring(0, markerIndex).trim() : output.trim();
+      const parsedTasks = parseTasksFromContent(planContent);
+      if (parsedTasks.length > 0) {
+        resolvedPlanSpec.tasks = parsedTasks;
+        resolvedPlanSpec.content = planContent;
+      }
+    } catch {
+      // ignore missing output
+    }
+  }
+
+  if (!resolvedPlanSpec?.tasks || resolvedPlanSpec.tasks.length === 0) {
     return null;
   }
 
-  const tasks: ParsedTask[] = planSpec.tasks.map((task) => ({
+  const tasks: ParsedTask[] = resolvedPlanSpec.tasks.map((task) => ({
     ...task,
     status: task.status || 'pending',
   }));

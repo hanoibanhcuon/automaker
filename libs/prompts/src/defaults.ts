@@ -74,6 +74,13 @@ IMPORTANT: Do NOT output exploration text, tool usage, or thinking before the sp
 
 Generate a specification with an actionable task breakdown. WAIT for approval before implementing.
 
+CRITICAL FORMAT RULES (MUST FOLLOW EXACTLY):
+- You MUST include a \`\`\`tasks\`\`\` code block as shown below.
+- Task IDs MUST be T001, T002, T003... (3 digits, sequential).
+- Keep the label "File:" in English exactly; do NOT translate or change it.
+- Do NOT rename the \`\`\`tasks\`\`\` block or its heading.
+- You MUST output the line "[SPEC_GENERATED] ..." exactly as shown.
+
 ### Specification Format
 
 1. **Problem**: What problem are we solving? (user perspective)
@@ -122,6 +129,13 @@ export const DEFAULT_AUTO_MODE_PLANNING_FULL = `## Full Specification Phase (Ful
 IMPORTANT: Do NOT output exploration text, tool usage, or thinking before the spec. Start DIRECTLY with the specification format below. Silently analyze the codebase first, then output ONLY the structured specification.
 
 Generate a comprehensive specification with phased task breakdown. WAIT for approval before implementing.
+
+CRITICAL FORMAT RULES (MUST FOLLOW EXACTLY):
+- You MUST include a \`\`\`tasks\`\`\` code block as shown below.
+- Task IDs MUST be T001, T002, T003... (3 digits, sequential across all phases).
+- Keep the label "File:" in English exactly; do NOT translate or change it.
+- Do NOT rename the \`\`\`tasks\`\`\` block or its heading.
+- You MUST output the line "[SPEC_GENERATED] ..." exactly as shown.
 
 ### Specification Format
 

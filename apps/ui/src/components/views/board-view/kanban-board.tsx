@@ -17,7 +17,9 @@ import { useResponsiveKanban } from '@/hooks/use-responsive-kanban';
 import { getColumnsWithPipeline, type ColumnId } from './constants';
 import type { PipelineConfig } from '@automaker/types';
 import { cn } from '@/lib/utils';
+import { useRunningAgents } from '@/hooks/queries';
 interface KanbanBoardProps {
+  projectPath: string;
   activeFeature: Feature | null;
   getColumnFeatures: (columnId: ColumnId) => Feature[];
   stepMap: Record<string, number>;
@@ -264,6 +266,7 @@ function VirtualizedList<Item extends VirtualListItem>({
 }
 
 export function KanbanBoard({
+  projectPath,
   activeFeature,
   getColumnFeatures,
   stepMap,
@@ -304,6 +307,13 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   // Generate columns including pipeline steps
   const columns = useMemo(() => getColumnsWithPipeline(pipelineConfig), [pipelineConfig]);
+  const { data: runningAgentsData } = useRunningAgents();
+  const runningAgentIds = useMemo(() => {
+    const agents = runningAgentsData?.agents ?? [];
+    return new Set(
+      agents.filter((agent) => agent.projectPath === projectPath).map((agent) => agent.featureId)
+    );
+  }, [runningAgentsData?.agents, projectPath]);
 
   // Get the keyboard shortcut for adding features
   const keyboardShortcuts = useAppStore((state) => state.keyboardShortcuts);
@@ -569,6 +579,7 @@ export function KanbanBoard({
                                       onSpawnTask={() => onSpawnTask?.(feature)}
                                       hasContext={featuresWithContext.has(feature.id)}
                                       isCurrentAutoTask={runningAutoTasks.includes(feature.id)}
+                                      isAgentRunning={runningAgentIds.has(feature.id)}
                                       shortcutKey={shortcutKey}
                                       opacity={effectiveCardOpacity}
                                       glassmorphism={effectiveGlassmorphism}
@@ -617,6 +628,7 @@ export function KanbanBoard({
                                 onSpawnTask={() => onSpawnTask?.(feature)}
                                 hasContext={featuresWithContext.has(feature.id)}
                                 isCurrentAutoTask={runningAutoTasks.includes(feature.id)}
+                                isAgentRunning={runningAgentIds.has(feature.id)}
                                 shortcutKey={shortcutKey}
                                 opacity={effectiveCardOpacity}
                                 glassmorphism={effectiveGlassmorphism}
@@ -669,6 +681,7 @@ export function KanbanBoard({
               onSpawnTask={() => {}}
               hasContext={featuresWithContext.has(activeFeature.id)}
               isCurrentAutoTask={runningAutoTasks.includes(activeFeature.id)}
+              isAgentRunning={runningAgentIds.has(activeFeature.id)}
               opacity={backgroundSettings.cardOpacity}
               glassmorphism={backgroundSettings.cardGlassmorphism}
               cardBorderEnabled={backgroundSettings.cardBorderEnabled}

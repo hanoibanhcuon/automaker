@@ -1449,6 +1449,7 @@ export function BoardView() {
             />
           ) : (
             <KanbanBoard
+              projectPath={currentProject.path}
               activeFeature={activeFeature}
               getColumnFeatures={getColumnFeatures}
               stepMap={backlogStepMap}

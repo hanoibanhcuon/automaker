@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Wand2, GitBranch, ClipboardCheck } from 'lucide-react';
+import { Wand2, GitBranch, ClipboardCheck, AlertTriangle } from 'lucide-react';
 import { UsagePopover } from '@/components/usage-popover';
 import { useAppStore } from '@/store/app-store';
 import { useSetupStore } from '@/store/setup-store';
@@ -14,6 +14,9 @@ import { BoardSearchBar } from './board-search-bar';
 import { BoardControls } from './board-controls';
 import { ViewToggle, type ViewMode } from './components';
 import { HeaderMobileMenu } from './header-mobile-menu';
+import { useNavigate } from '@tanstack/react-router';
+import { useRecoveryCenter } from '@/hooks/queries';
+import { Badge } from '@/components/ui/badge';
 
 export type { ViewMode };
 
@@ -77,6 +80,10 @@ export function BoardHeader({
     (state) => state.setAddFeatureUseSelectedWorktreeBranch
   );
   const codexAuthStatus = useSetupStore((state) => state.codexAuthStatus);
+  const navigate = useNavigate();
+  const { data: recoveryData } = useRecoveryCenter(projectPath, false);
+  const recoveryCount = recoveryData?.summary?.total ?? 0;
+  const hasRecoveryIssues = recoveryCount > 0;
 
   // Worktree panel visibility (per-project)
   const worktreePanelVisibleByProject = useAppStore((state) => state.worktreePanelVisibleByProject);
@@ -112,6 +119,9 @@ export function BoardHeader({
   const [showActionsPanel, setShowActionsPanel] = useState(false);
 
   const isTablet = useIsTablet();
+  const handleOpenRecovery = useCallback(() => {
+    navigate({ to: '/recovery' });
+  }, [navigate]);
 
   return (
     <div className="flex items-center justify-between gap-5 p-4 border-b border-border bg-glass backdrop-blur-md">
@@ -145,6 +155,8 @@ export function BoardHeader({
             skipVerificationInAutoMode={skipVerificationInAutoMode}
             onSkipVerificationChange={setSkipVerificationInAutoMode}
             onOpenPlanDialog={onOpenPlanDialog}
+            recoveryCount={recoveryCount}
+            onOpenRecovery={handleOpenRecovery}
             showClaudeUsage={showClaudeUsage}
             showCodexUsage={showCodexUsage}
           />
@@ -152,6 +164,25 @@ export function BoardHeader({
 
         {/* Desktop view: show full controls */}
         {/* Worktrees Toggle - only show after mount to prevent hydration issues */}
+        {isMounted && !isTablet && (
+          <div className={controlContainerClass} data-testid="recovery-center-button">
+            <button
+              onClick={handleOpenRecovery}
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+            >
+              <AlertTriangle
+                className={`w-4 h-4 ${hasRecoveryIssues ? 'text-amber-500' : 'text-muted-foreground'}`}
+              />
+              <span className="text-sm font-medium">Recovery</span>
+              {hasRecoveryIssues && (
+                <Badge variant="secondary" className="text-[10px] px-2 py-0.5">
+                  {recoveryCount}
+                </Badge>
+              )}
+            </button>
+          </div>
+        )}
+
         {isMounted && !isTablet && (
           <div className={controlContainerClass} data-testid="worktrees-toggle-container">
             <GitBranch className="w-4 h-4 text-muted-foreground" />

@@ -188,7 +188,20 @@ export function RecoveryView() {
       if (!result?.success) {
         toast.error('Reconcile failed', { description: result?.error || 'Unknown error' });
       } else {
-        toast.success('Reconciled successfully');
+        const warnings: string[] = [];
+        if (result.reconciled?.tasksTotal === 0) {
+          warnings.push('No tasks found in the plan output');
+        }
+        if (result.reconciled?.missingFiles?.length) {
+          warnings.push(`Missing files: ${result.reconciled.missingFiles.length}`);
+        }
+        if (warnings.length > 0) {
+          toast.warning('Reconcile completed with issues', {
+            description: `${warnings.join('. ')}. Consider Replan Full or Rebuild Output.`,
+          });
+        } else {
+          toast.success('Reconciled successfully');
+        }
         await refetch();
       }
     } finally {
@@ -205,7 +218,20 @@ export function RecoveryView() {
       if (!result?.success) {
         toast.error('Rebuild failed', { description: result?.error || 'Unknown error' });
       } else {
-        toast.success('Output rebuilt');
+        const warnings: string[] = [];
+        if (!result.content || result.content.trim().length === 0) {
+          warnings.push('Agent output is empty');
+        }
+        if (result.missingFiles?.length) {
+          warnings.push(`Missing files: ${result.missingFiles.length}`);
+        }
+        if (warnings.length > 0) {
+          toast.warning('Output rebuilt with warnings', {
+            description: `${warnings.join('. ')}.`,
+          });
+        } else {
+          toast.success('Output rebuilt');
+        }
         await refetch();
       }
     } finally {
@@ -222,7 +248,13 @@ export function RecoveryView() {
       if (!result?.success) {
         toast.error('Resume failed', { description: result?.error || 'Unknown error' });
       } else {
-        toast.success('Resume started');
+        if (result.reconciled?.tasksTotal === 0) {
+          toast.warning('No pending tasks to resume', {
+            description: 'Plan has no tasks. Try Replan Full or Rebuild Output.',
+          });
+        } else {
+          toast.success('Resume started');
+        }
         await refetch();
       }
     } finally {
@@ -274,6 +306,9 @@ export function RecoveryView() {
   const runBulkAction = async (action: 'reconcile' | 'rebuild' | 'resume' | 'restore-deps') => {
     if (!projectPath || selectedFilteredIds.length === 0) return;
     let ids = [...selectedFilteredIds];
+    let emptyPlanCount = 0;
+    let missingFilesCount = 0;
+    let emptyOutputCount = 0;
     if (action === 'resume') {
       ids = selectedItems.filter((item) => item.canResume).map((item) => item.featureId);
       if (ids.length === 0) {
@@ -303,20 +338,28 @@ export function RecoveryView() {
           const result = await api.features?.reconcilePlan?.(projectPath, featureId, {
             rebuildOutput: true,
           });
-          if (result?.success) successCount += 1;
-          else failureCount += 1;
+          if (result?.success) {
+            successCount += 1;
+            if (result.reconciled?.tasksTotal === 0) emptyPlanCount += 1;
+            if (result.reconciled?.missingFiles?.length) missingFilesCount += 1;
+          } else failureCount += 1;
         } else if (action === 'rebuild') {
           const result = await api.features?.rebuildOutput?.(projectPath, featureId);
-          if (result?.success) successCount += 1;
-          else failureCount += 1;
+          if (result?.success) {
+            successCount += 1;
+            if (!result.content || result.content.trim().length === 0) emptyOutputCount += 1;
+            if (result.missingFiles?.length) missingFilesCount += 1;
+          } else failureCount += 1;
         } else if (action === 'restore-deps') {
           const result = await api.features?.restoreDependencies?.(projectPath, featureId);
           if (result?.success) successCount += 1;
           else failureCount += 1;
         } else {
           const result = await api.features?.resumePending?.(projectPath, featureId, useWorktrees);
-          if (result?.success) successCount += 1;
-          else failureCount += 1;
+          if (result?.success) {
+            successCount += 1;
+            if (result.reconciled?.tasksTotal === 0) emptyPlanCount += 1;
+          } else failureCount += 1;
         }
       } catch {
         failureCount += 1;
@@ -330,9 +373,19 @@ export function RecoveryView() {
         description: `Success: ${successCount}, Failed: ${failureCount}`,
       });
     } else {
-      toast.success('Bulk action completed', {
-        description: `Processed ${successCount} feature(s).`,
-      });
+      const warnings: string[] = [];
+      if (emptyPlanCount > 0) warnings.push(`Empty plans: ${emptyPlanCount}`);
+      if (missingFilesCount > 0) warnings.push(`Missing files: ${missingFilesCount}`);
+      if (emptyOutputCount > 0) warnings.push(`Empty outputs: ${emptyOutputCount}`);
+      if (warnings.length > 0) {
+        toast.warning('Bulk action completed with issues', {
+          description: warnings.join('. '),
+        });
+      } else {
+        toast.success('Bulk action completed', {
+          description: `Processed ${successCount} feature(s).`,
+        });
+      }
     }
   };
 
@@ -612,6 +665,7 @@ export function RecoveryView() {
             const planText = item.plan
               ? `${item.plan.tasksCompleted}/${item.plan.tasksTotal}`
               : 'n/a';
+            const planIsEmpty = !item.plan || item.plan.tasksTotal === 0;
 
             return (
               <Card key={item.featureId} className="border border-border/60">
@@ -651,6 +705,18 @@ export function RecoveryView() {
                     )}
                     {!item.hasAgentOutput && <span className="text-amber-500">Output missing</span>}
                   </div>
+
+                  {planIsEmpty && (
+                    <div className="text-xs text-amber-500">
+                      Plan is missing or has no tasks. Run Replan Full or Rebuild Output to recover.
+                    </div>
+                  )}
+
+                  {!item.hasAgentOutput && (
+                    <div className="text-xs text-amber-500">
+                      Agent output is missing. Rebuild Output to restore it.
+                    </div>
+                  )}
 
                   {(item.providerId || item.model) && (
                     <div

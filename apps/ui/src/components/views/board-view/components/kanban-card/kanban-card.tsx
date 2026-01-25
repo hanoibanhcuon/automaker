@@ -63,6 +63,7 @@ interface KanbanCardProps {
   glassmorphism?: boolean;
   cardBorderEnabled?: boolean;
   cardBorderOpacity?: number;
+  isAgentRunning?: boolean;
   isOverlay?: boolean;
   reduceEffects?: boolean;
   // Selection mode props
@@ -99,6 +100,7 @@ export const KanbanCard = memo(function KanbanCard({
   glassmorphism = true,
   cardBorderEnabled = true,
   cardBorderOpacity = 100,
+  isAgentRunning,
   isOverlay,
   reduceEffects = false,
   isSelectionMode = false,
@@ -247,6 +249,7 @@ export const KanbanCard = memo(function KanbanCard({
         feature={feature}
         isDraggable={isDraggable}
         isCurrentAutoTask={!!isCurrentAutoTask}
+        isAgentRunning={isAgentRunning}
         isSelectionMode={isSelectionMode}
         onEdit={onEdit}
         onDelete={onDelete}

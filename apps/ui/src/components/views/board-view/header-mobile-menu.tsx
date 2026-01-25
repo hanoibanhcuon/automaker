@@ -5,9 +5,10 @@ import {
   HeaderActionsPanel,
   HeaderActionsPanelTrigger,
 } from '@/components/ui/header-actions-panel';
-import { Bot, Wand2, GitBranch, Zap, FastForward } from 'lucide-react';
+import { Bot, Wand2, GitBranch, Zap, FastForward, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MobileUsageBar } from './mobile-usage-bar';
+import { Badge } from '@/components/ui/badge';
 
 interface HeaderMobileMenuProps {
   // Panel visibility
@@ -27,6 +28,9 @@ interface HeaderMobileMenuProps {
   onSkipVerificationChange: (value: boolean) => void;
   // Plan button
   onOpenPlanDialog: () => void;
+  // Recovery Center
+  recoveryCount: number;
+  onOpenRecovery: () => void;
   // Usage bar visibility
   showClaudeUsage: boolean;
   showCodexUsage: boolean;
@@ -45,6 +49,8 @@ export function HeaderMobileMenu({
   skipVerificationInAutoMode,
   onSkipVerificationChange,
   onOpenPlanDialog,
+  recoveryCount,
+  onOpenRecovery,
   showClaudeUsage,
   showCodexUsage,
 }: HeaderMobileMenuProps) {
@@ -171,6 +177,30 @@ export function HeaderMobileMenu({
           >
             <Wand2 className="w-4 h-4 mr-2" />
             Plan
+          </Button>
+
+          {/* Recovery Center Button */}
+          <Button
+            variant="outline"
+            className="w-full justify-start"
+            onClick={() => {
+              onOpenRecovery();
+              onToggle();
+            }}
+            data-testid="mobile-recovery-button"
+          >
+            <AlertTriangle
+              className={cn(
+                'w-4 h-4 mr-2',
+                recoveryCount > 0 ? 'text-amber-500' : 'text-muted-foreground'
+              )}
+            />
+            <span>Recovery Center</span>
+            {recoveryCount > 0 && (
+              <Badge variant="secondary" className="ml-auto text-[10px] px-2 py-0.5">
+                {recoveryCount}
+              </Badge>
+            )}
           </Button>
         </div>
       </HeaderActionsPanel>

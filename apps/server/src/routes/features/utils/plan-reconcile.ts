@@ -23,6 +23,25 @@ export interface PlanReconcileResult {
   missingFiles: string[];
 }
 
+function sanitizeWorktreeName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
+function getWorktreeRoots(projectPath: string, feature: Feature): string[] {
+  const roots: string[] = [];
+  const worktreesDir = path.join(projectPath, '.worktrees');
+
+  if (feature.branchName) {
+    roots.push(path.join(worktreesDir, sanitizeWorktreeName(feature.branchName)));
+  }
+
+  if (feature.id) {
+    roots.push(path.join(worktreesDir, sanitizeWorktreeName(feature.id)));
+  }
+
+  return roots;
+}
+
 function normalizeTaskId(rawId: string): string | null {
   const digits = rawId.replace(/\D/g, '');
   if (!digits) return null;
@@ -139,6 +158,7 @@ export async function reconcileFeaturePlanSpec(
   }));
 
   const missingFiles: string[] = [];
+  const worktreeRoots = getWorktreeRoots(projectPath, feature);
 
   for (const task of tasks) {
     if (task.status === 'in_progress' && !task.startedAt && feature.startedAt) {
@@ -148,17 +168,32 @@ export async function reconcileFeaturePlanSpec(
       continue;
     }
 
-    const resolvedPath = path.isAbsolute(task.filePath)
-      ? task.filePath
-      : path.join(projectPath, task.filePath);
-
-    try {
-      const stat = await secureFs.stat(resolvedPath);
-      task.status = 'completed';
-      if (!task.completedAt) {
-        task.completedAt = stat.mtime.toISOString();
+    const candidatePaths: string[] = [];
+    if (path.isAbsolute(task.filePath)) {
+      candidatePaths.push(task.filePath);
+    } else {
+      candidatePaths.push(path.join(projectPath, task.filePath));
+      for (const root of worktreeRoots) {
+        candidatePaths.push(path.join(root, task.filePath));
       }
-    } catch {
+    }
+
+    let found = false;
+    for (const candidate of candidatePaths) {
+      try {
+        const stat = await secureFs.stat(candidate);
+        task.status = 'completed';
+        if (!task.completedAt) {
+          task.completedAt = stat.mtime.toISOString();
+        }
+        found = true;
+        break;
+      } catch {
+        // continue
+      }
+    }
+
+    if (!found) {
       missingFiles.push(task.filePath);
       if (task.status !== 'failed') {
         task.status = 'pending';

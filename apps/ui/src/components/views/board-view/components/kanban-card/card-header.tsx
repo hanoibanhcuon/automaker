@@ -25,11 +25,13 @@ import { CountUpTimer } from '@/components/ui/count-up-timer';
 import { formatModelName, DEFAULT_MODEL } from '@/lib/agent-context-parser';
 import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog';
 import { getProviderIconForModel } from '@/components/ui/provider-icon';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CardHeaderProps {
   feature: Feature;
   isDraggable: boolean;
   isCurrentAutoTask: boolean;
+  isAgentRunning?: boolean;
   isSelectionMode?: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -41,6 +43,7 @@ export const CardHeaderSection = memo(function CardHeaderSection({
   feature,
   isDraggable,
   isCurrentAutoTask,
+  isAgentRunning = false,
   isSelectionMode = false,
   onEdit,
   onDelete,
@@ -66,6 +69,9 @@ export const CardHeaderSection = memo(function CardHeaderSection({
         <div className="absolute top-2 right-2 flex items-center gap-1">
           <div className="flex items-center justify-center gap-2 bg-[var(--status-in-progress)]/15 border border-[var(--status-in-progress)]/50 rounded-md px-2 py-0.5">
             <Spinner size="xs" />
+            <span className="text-[10px] font-medium text-[var(--status-in-progress)]">
+              Running
+            </span>
             {feature.startedAt && (
               <CountUpTimer
                 startedAt={feature.startedAt}
@@ -233,6 +239,33 @@ export const CardHeaderSection = memo(function CardHeaderSection({
       {!isCurrentAutoTask && feature.status === 'in_progress' && (
         <>
           <div className="absolute top-2 right-2 flex items-center gap-1">
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 rounded-md px-2 py-0.5 border text-[10px] font-medium',
+                      isAgentRunning
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                        : 'bg-muted/30 border-border text-muted-foreground'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'h-2 w-2 rounded-full',
+                        isAgentRunning ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/60'
+                      )}
+                    />
+                    {isAgentRunning ? 'Running' : 'Not active'}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  {isAgentRunning
+                    ? 'Agent is currently running'
+                    : 'No running agent detected for this task'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <Button
               variant="ghost"
               size="sm"

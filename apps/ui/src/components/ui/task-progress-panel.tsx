@@ -25,6 +25,8 @@ interface TaskProgressPanelProps {
   featureId: string;
   projectPath?: string;
   className?: string;
+  /** Optional override for the active task id */
+  activeTaskIdOverride?: string | null;
   /** Whether the panel starts expanded (default: true) */
   defaultExpanded?: boolean;
   /** Optional TODOs for the active task (deduped/limited upstream) */
@@ -44,6 +46,7 @@ export function TaskProgressPanel({
   featureId,
   projectPath,
   className,
+  activeTaskIdOverride = null,
   defaultExpanded = true,
   activeTodos,
   taskTodosById,
@@ -224,6 +227,25 @@ export function TaskProgressPanel({
   const totalCount = tasks.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  useEffect(() => {
+    if (activeTaskIdOverride) {
+      setCurrentTaskId(activeTaskIdOverride);
+      return;
+    }
+    if (currentTaskId) {
+      const stillExists = tasks.some((t) => t.id === currentTaskId && t.status === 'in_progress');
+      if (!stillExists) {
+        const activeTask = tasks.find((t) => t.status === 'in_progress');
+        setCurrentTaskId(activeTask?.id ?? null);
+      }
+      return;
+    }
+    const activeTask = tasks.find((t) => t.status === 'in_progress');
+    if (activeTask) {
+      setCurrentTaskId(activeTask.id);
+    }
+  }, [tasks, currentTaskId, activeTaskIdOverride]);
+
   const formatDuration = (ms?: number | null): string => {
     if (!ms || ms <= 0) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -255,7 +277,7 @@ export function TaskProgressPanel({
   return (
     <div
       className={cn(
-        'group rounded-lg border bg-card/50 shadow-sm overflow-hidden transition-all duration-200',
+        'group rounded-lg border bg-card/50 shadow-sm overflow-hidden transition-all duration-200 flex flex-col min-h-0',
         className
       )}
     >
@@ -277,13 +299,13 @@ export function TaskProgressPanel({
             )}
           </div>
           <div className="flex flex-col items-start gap-0.5">
-            <h3 className={cn('font-semibold tracking-tight', compact ? 'text-xs' : 'text-sm')}>
+            <h3 className={cn('font-semibold tracking-tight', compact ? 'text-sm' : 'text-base')}>
               Execution Plan
             </h3>
             <span
               className={cn(
                 'text-muted-foreground uppercase tracking-wider font-medium',
-                compact ? 'text-[9px]' : 'text-[10px]'
+                compact ? 'text-[10px]' : 'text-[11px]'
               )}
             >
               {completedCount} of {totalCount} tasks completed
@@ -293,7 +315,7 @@ export function TaskProgressPanel({
                 {currentPhase && (
                   <Badge
                     variant="secondary"
-                    className={cn('h-5 px-2', compact ? 'text-[9px]' : 'text-[10px]')}
+                    className={cn('h-5 px-2', compact ? 'text-[10px]' : 'text-[11px]')}
                   >
                     Phase: {currentPhase}
                   </Badge>
@@ -301,7 +323,7 @@ export function TaskProgressPanel({
                 {currentTaskId && (
                   <Badge
                     variant="outline"
-                    className={cn('h-5 px-2', compact ? 'text-[9px]' : 'text-[10px]')}
+                    className={cn('h-5 px-2', compact ? 'text-[10px]' : 'text-[11px]')}
                   >
                     Active: {currentTaskId}
                   </Badge>
@@ -311,7 +333,7 @@ export function TaskProgressPanel({
             {hasTodoUpdates && !showAllTodos && (
               <div className="flex items-center gap-1.5 pt-1">
                 <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className={cn('text-[10px] font-medium text-emerald-300')}>
+                <span className={cn('text-[11px] font-medium text-emerald-300')}>
                   TodoWrite updated
                 </span>
               </div>
@@ -372,14 +394,14 @@ export function TaskProgressPanel({
 
       <div
         className={cn(
-          'grid transition-all duration-300 ease-in-out',
+          'grid transition-all duration-300 ease-in-out flex-1 min-h-0',
           isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
         )}
       >
         <div className="overflow-hidden">
           <div
             className={cn(
-              'p-4 pt-2 relative overflow-y-auto scrollbar-visible',
+              'p-4 pt-2 relative overflow-y-auto scrollbar-visible min-h-0',
               listMaxHeightClass
             )}
           >
@@ -388,7 +410,11 @@ export function TaskProgressPanel({
 
             <div className="space-y-5">
               {tasks.map((task, index) => {
-                const isActive = task.status === 'in_progress';
+                const effectiveActiveId = activeTaskIdOverride || currentTaskId;
+                const isActive =
+                  effectiveActiveId !== null
+                    ? task.id === effectiveActiveId
+                    : task.status === 'in_progress';
                 const isCompleted = task.status === 'completed';
                 const isPending = task.status === 'pending';
                 const startTime = task.startedAt ? new Date(task.startedAt).getTime() : null;
@@ -409,8 +435,10 @@ export function TaskProgressPanel({
                   <div
                     key={task.id}
                     className={cn(
-                      'relative flex gap-4 group/item transition-all duration-300',
-                      isPending && 'opacity-60 hover:opacity-100'
+                      'relative flex gap-4 group/item transition-all duration-300 rounded-lg px-2 py-2 -mx-2',
+                      isPending && 'opacity-60 hover:opacity-100',
+                      isActive &&
+                        'bg-primary/10 border border-primary/30 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]'
                     )}
                   >
                     {/* Icon Status */}
@@ -441,7 +469,7 @@ export function TaskProgressPanel({
                           <p
                             className={cn(
                               'font-medium leading-none truncate pr-4',
-                              compact ? 'text-xs' : 'text-sm',
+                              compact ? 'text-sm' : 'text-base',
                               isCompleted &&
                                 'text-muted-foreground line-through decoration-border/60',
                               isActive && 'text-primary font-semibold'
@@ -453,7 +481,7 @@ export function TaskProgressPanel({
                             <span
                               className={cn(
                                 'text-muted-foreground whitespace-nowrap',
-                                compact ? 'text-[9px]' : 'text-[10px]'
+                                compact ? 'text-[10px]' : 'text-[11px]'
                               )}
                               title={
                                 task.startedAt && task.completedAt
@@ -471,7 +499,7 @@ export function TaskProgressPanel({
                               variant="outline"
                               className={cn(
                                 'h-5 px-1.5 bg-primary/5 text-primary border-primary/20 animate-pulse',
-                                compact ? 'text-[9px]' : 'text-[10px]'
+                                compact ? 'text-[10px]' : 'text-[11px]'
                               )}
                             >
                               Active
@@ -483,7 +511,7 @@ export function TaskProgressPanel({
                           <div
                             className={cn(
                               'flex items-center gap-2 text-muted-foreground font-mono',
-                              compact ? 'text-[10px]' : 'text-xs'
+                              compact ? 'text-[11px]' : 'text-sm'
                             )}
                           >
                             {task.filePath ? (
@@ -507,7 +535,7 @@ export function TaskProgressPanel({
                             <div
                               className={cn(
                                 'space-y-1 text-muted-foreground',
-                                compact ? 'text-[10px]' : 'text-[11px]'
+                                compact ? 'text-[11px]' : 'text-[12px]'
                               )}
                             >
                               {todosForTask?.map((todo, todoIndex) => (

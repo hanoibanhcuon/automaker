@@ -35,10 +35,12 @@ import { extractSummary } from '@/lib/log-parser';
 import { parseAgentContext, extractTodoWritesByTask } from '@/lib/agent-context-parser';
 import { useAgentOutput, useFeature, useFeatureTimeline, useRunningAgents } from '@/hooks/queries';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AutoModeEvent } from '@/types/electron';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface AgentOutputModalProps {
   open: boolean;
@@ -105,12 +107,6 @@ export function AgentOutputModal({
       (agent) => agent.featureId === featureId && agent.projectPath === resolvedProjectPath
     );
   }, [runningAgentsData?.agents, featureId, resolvedProjectPath]);
-  const isPlanComplete = Boolean(
-    reconcileInfo &&
-    reconcileInfo.tasksTotal > 0 &&
-    reconcileInfo.tasksCompleted >= reconcileInfo.tasksTotal
-  );
-
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       if (!isDraggingRef.current || !layoutRef.current) return;
@@ -142,12 +138,26 @@ export function AgentOutputModal({
   });
   const { data: featureData } = useFeature(resolvedProjectPath, featureId, {
     enabled: open && !!resolvedProjectPath && !isBacklogPlan,
-    pollingInterval: false,
+    pollingInterval: open && !isBacklogPlan ? 5000 : false,
   });
-  const planTaskCount = (featureData as any)?.planSpec?.tasks?.length ?? 0;
+  const planSpecData = (featureData as any)?.planSpec;
+  const planTaskCount = planSpecData?.tasks?.length ?? 0;
   const hasPlanTasks = planTaskCount > 0;
-  const planContentAvailable = Boolean((featureData as any)?.planSpec?.content);
+  const planContentAvailable = Boolean(planSpecData?.content);
   const planMissingTasks = planContentAvailable && !hasPlanTasks;
+  const derivedPlanHealth = planSpecData
+    ? {
+        tasksCompleted: planSpecData.tasksCompleted ?? 0,
+        tasksTotal: planSpecData.tasksTotal ?? planTaskCount ?? 0,
+        currentTaskId: planSpecData.currentTaskId,
+      }
+    : null;
+  const effectivePlanHealth = reconcileInfo ?? derivedPlanHealth;
+  const isPlanComplete = Boolean(
+    effectivePlanHealth &&
+    effectivePlanHealth.tasksTotal > 0 &&
+    effectivePlanHealth.tasksCompleted >= effectivePlanHealth.tasksTotal
+  );
 
   useEffect(() => {
     setReconcileInfo(null);
@@ -176,7 +186,7 @@ export function AgentOutputModal({
   }, [open, hasPlanTasks]);
 
   const handleReconcile = useCallback(
-    async (source: 'auto' | 'manual' = 'manual') => {
+    async (source: 'auto' | 'manual' = 'manual', rebuildOutput = source === 'manual') => {
       if (!resolvedProjectPath || !featureId || isBacklogPlan) return;
       if (isReconciling) return;
 
@@ -184,7 +194,7 @@ export function AgentOutputModal({
         setIsReconciling(true);
         const api = getElectronAPI();
         const result = await api.features?.reconcilePlan?.(resolvedProjectPath, featureId, {
-          rebuildOutput: true,
+          rebuildOutput,
         });
         if (result?.success) {
           setReconcileInfo(result.reconciled || null);
@@ -201,7 +211,23 @@ export function AgentOutputModal({
             await queryClient.invalidateQueries({
               queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
             });
+            const warnings: string[] = [];
+            if (result.reconciled?.tasksTotal === 0) {
+              warnings.push('No tasks found in plan output');
+            }
+            if (result.reconciled?.missingFiles?.length) {
+              warnings.push(`Missing files: ${result.reconciled.missingFiles.length}`);
+            }
+            if (warnings.length > 0) {
+              toast.warning('Reconcile completed with issues', {
+                description: `${warnings.join('. ')}. Consider Replan Full or Rebuild Output.`,
+              });
+            } else {
+              toast.success('Reconciled successfully');
+            }
           }
+        } else if (source === 'manual') {
+          toast.error('Reconcile failed', { description: result?.error || 'Unknown error' });
         }
       } finally {
         setIsReconciling(false);
@@ -225,6 +251,22 @@ export function AgentOutputModal({
         await queryClient.invalidateQueries({
           queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
         });
+        const warnings: string[] = [];
+        if (!result.content || result.content.trim().length === 0) {
+          warnings.push('Agent output is empty');
+        }
+        if (result.missingFiles?.length) {
+          warnings.push(`Missing files: ${result.missingFiles.length}`);
+        }
+        if (warnings.length > 0) {
+          toast.warning('Output rebuilt with warnings', {
+            description: warnings.join('. '),
+          });
+        } else {
+          toast.success('Output rebuilt');
+        }
+      } else {
+        toast.error('Rebuild failed', { description: result?.error || 'Unknown error' });
       }
     } finally {
       setIsRebuilding(false);
@@ -253,6 +295,15 @@ export function AgentOutputModal({
         await queryClient.invalidateQueries({
           queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
         });
+        if (result.reconciled?.tasksTotal === 0) {
+          toast.warning('No pending tasks to resume', {
+            description: 'Plan has no tasks. Try Replan Full or Rebuild Output.',
+          });
+        } else {
+          toast.success('Resume started');
+        }
+      } else {
+        toast.error('Resume failed', { description: result?.error || 'Unknown error' });
       }
     } finally {
       setIsResuming(false);
@@ -285,6 +336,11 @@ export function AgentOutputModal({
         await queryClient.invalidateQueries({
           queryKey: ['features', resolvedProjectPath, featureId, 'timeline'],
         });
+        toast.success('Replan requested', {
+          description: 'Check the Plan tab. If tasks are still missing, try Rebuild Output.',
+        });
+      } else {
+        toast.error('Replan failed', { description: result?.error || 'Unknown error' });
       }
     } finally {
       setIsReplanning(false);
@@ -313,16 +369,36 @@ export function AgentOutputModal({
     const key = `${resolvedProjectPath}:${featureId}`;
     if (lastAutoReconcileRef.current === key) return;
     lastAutoReconcileRef.current = key;
-    handleReconcile('auto');
+    handleReconcile('auto', false);
   }, [open, resolvedProjectPath, featureId, isBacklogPlan, handleReconcile]);
+
+  useEffect(() => {
+    if (!open || !resolvedProjectPath || !featureId || isBacklogPlan) return;
+    const intervalMs = isFeatureRunning ? 10000 : 30000;
+    const intervalId = window.setInterval(() => {
+      if (!isReconciling) {
+        handleReconcile('auto', false);
+      }
+    }, intervalMs);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    open,
+    resolvedProjectPath,
+    featureId,
+    isBacklogPlan,
+    isFeatureRunning,
+    isReconciling,
+    handleReconcile,
+  ]);
 
   // Combine initial output from query with streamed content from WebSocket
   const output = initialOutput + streamedContent;
 
   // Extract summary from output
   const summary = useMemo(() => extractSummary(output), [output]);
-  const currentTaskId =
-    reconcileInfo?.currentTaskId || (featureData as any)?.planSpec?.currentTaskId || null;
+  const currentTaskId = effectivePlanHealth?.currentTaskId ?? planSpecData?.currentTaskId ?? null;
   const taskTodosById = useMemo(() => {
     if (!output) return {};
     return extractTodoWritesByTask(output, currentTaskId);
@@ -340,6 +416,23 @@ export function AgentOutputModal({
     }
     return deduped.slice(0, 10);
   }, [currentTaskId, taskTodosById, output]);
+  const todoStats = useMemo(() => {
+    const allTodos = Object.values(taskTodosById || {}).flat();
+    const source = allTodos.length > 0 ? allTodos : activeTodos;
+    const pending = source.filter((todo) => todo.status !== 'completed').length;
+    const inProgress = source.filter((todo) => todo.status === 'in_progress').length;
+    return {
+      total: source.length,
+      pending,
+      inProgress,
+      hasUnfinished: pending > 0,
+    };
+  }, [taskTodosById, activeTodos]);
+  const completionState = useMemo(() => {
+    if (isPlanComplete && !isFeatureRunning && !todoStats.hasUnfinished) return 'completed';
+    if (isPlanComplete && (isFeatureRunning || todoStats.hasUnfinished)) return 'finishing';
+    return 'in_progress';
+  }, [isPlanComplete, isFeatureRunning, todoStats.hasUnfinished]);
 
   // Determine the effective view mode - default to summary if available, otherwise parsed
   const effectiveViewMode = viewMode ?? (summary ? 'summary' : 'parsed');
@@ -700,29 +793,30 @@ export function AgentOutputModal({
             {!isBacklogPlan && (
               <div className="flex flex-col gap-2 rounded-lg border border-border/50 bg-card/40 p-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
-                  {reconcileInfo ? (
+                  {effectivePlanHealth ? (
                     <>
                       <span className="truncate font-semibold text-foreground">
-                        Plan health: {reconcileInfo.tasksCompleted}/{reconcileInfo.tasksTotal}{' '}
-                        completed
+                        Plan health: {effectivePlanHealth.tasksCompleted}/
+                        {effectivePlanHealth.tasksTotal} completed
                       </span>
-                      {reconcileInfo.missingFiles.length > 0 && (
+                      {reconcileInfo?.missingFiles?.length ? (
                         <span className="text-amber-500 font-semibold">
                           Missing files: {reconcileInfo.missingFiles.length}
                         </span>
-                      )}
+                      ) : null}
                       {planMissingTasks && (
                         <span className="text-amber-500 font-semibold">
                           Plan missing tasks (invalid format)
                         </span>
                       )}
-                      {reconcileInfo.statusAdjusted && (
+                      {reconcileInfo?.statusAdjusted && (
                         <span className="text-amber-500 font-semibold">Moved back to backlog</span>
                       )}
-                      {isPlanComplete && isFeatureRunning && (
+                      {isPlanComplete && (isFeatureRunning || todoStats.hasUnfinished) && (
                         <span className="flex items-center gap-1 text-amber-500 font-semibold">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          Plan complete but agent still running
+                          Plan complete but work still active
+                          {todoStats.hasUnfinished ? ` (${todoStats.pending} TODO pending)` : ''}
                         </span>
                       )}
                     </>
@@ -826,6 +920,7 @@ export function AgentOutputModal({
                 compact
                 activeTodos={activeTodos}
                 taskTodosById={taskTodosById}
+                activeTaskIdOverride={currentTaskId}
                 listMaxHeightClass="h-full max-h-none"
               />
             ) : (
@@ -853,6 +948,38 @@ export function AgentOutputModal({
               panelMode === 'plan' ? 'hidden' : 'flex-1'
             )}
           >
+            <div className="flex flex-wrap items-center gap-2 px-1">
+              {effectivePlanHealth && (
+                <Badge variant="secondary" className="text-[10px]">
+                  Tasks {effectivePlanHealth.tasksCompleted}/{effectivePlanHealth.tasksTotal}
+                </Badge>
+              )}
+              {todoStats.total > 0 && (
+                <Badge
+                  variant={todoStats.hasUnfinished ? 'outline' : 'secondary'}
+                  className={cn(
+                    'text-[10px]',
+                    todoStats.hasUnfinished ? 'text-amber-500 border-amber-500/40' : ''
+                  )}
+                >
+                  TODO {todoStats.pending}/{todoStats.total}
+                </Badge>
+              )}
+              <Badge
+                variant={completionState === 'completed' ? 'secondary' : 'outline'}
+                className={cn(
+                  'text-[10px]',
+                  completionState === 'finishing' && 'text-amber-500 border-amber-500/40',
+                  completionState === 'in_progress' && 'text-muted-foreground border-border/60'
+                )}
+              >
+                {completionState === 'completed'
+                  ? 'Completed'
+                  : completionState === 'finishing'
+                    ? 'Finishing'
+                    : 'In progress'}
+              </Badge>
+            </div>
             <div className="flex items-center gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
               {summary && (
                 <button

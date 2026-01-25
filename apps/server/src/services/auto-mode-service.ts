@@ -17,6 +17,7 @@ import type {
   ModelProvider,
   PipelineStep,
   FeatureStatusWithPipeline,
+  FeatureStatus,
   PipelineConfig,
   ThinkingLevel,
   PlanningMode,
@@ -1394,24 +1395,98 @@ export class AutoModeService {
       const errorInfo = classifyError(error);
 
       if (errorInfo.isAbort) {
+        let completionMessageSuffix = '';
+        let finalStatus: FeatureStatus | null = null;
+        try {
+          const latestFeature = await this.loadFeature(projectPath, featureId);
+          const reconciledPlan = await this.reconcilePlanSpecWithFilesystem(
+            projectPath,
+            featureId,
+            latestFeature?.planSpec ?? feature?.planSpec
+          );
+          if (reconciledPlan) {
+            await this.updateFeaturePlanSpec(projectPath, featureId, reconciledPlan);
+            if (reconciledPlan.tasksTotal > 0) {
+              if (reconciledPlan.tasksCompleted >= reconciledPlan.tasksTotal) {
+                const status =
+                  (latestFeature?.skipTests ?? feature?.skipTests)
+                    ? 'waiting_approval'
+                    : 'verified';
+                await this.updateFeatureStatus(projectPath, featureId, status);
+                finalStatus = status;
+                completionMessageSuffix = ' - auto-finalized (plan complete)';
+              } else {
+                await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+                finalStatus = 'backlog';
+                completionMessageSuffix = ` - plan incomplete (${reconciledPlan.tasksCompleted}/${reconciledPlan.tasksTotal})`;
+              }
+            }
+          } else {
+            await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+            finalStatus = 'backlog';
+          }
+        } catch (finalizeError) {
+          logger.warn(`Failed to finalize aborted feature ${featureId}:`, finalizeError);
+        }
+
         this.emitAutoModeEvent('auto_mode_feature_complete', {
           featureId,
           featureName: feature?.title,
           branchName: feature?.branchName ?? null,
           passes: false,
-          message: 'Feature stopped by user',
+          message: `Feature stopped by user${completionMessageSuffix}`,
           projectPath,
+          finalStatus,
         });
       } else {
         logger.error(`Feature ${featureId} failed:`, error);
-        await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+        let finalStatus: FeatureStatus | null = null;
+        let completionMessageSuffix = '';
+        try {
+          const latestFeature = await this.loadFeature(projectPath, featureId);
+          const reconciledPlan = await this.reconcilePlanSpecWithFilesystem(
+            projectPath,
+            featureId,
+            latestFeature?.planSpec ?? feature?.planSpec
+          );
+          if (reconciledPlan) {
+            await this.updateFeaturePlanSpec(projectPath, featureId, reconciledPlan);
+            if (reconciledPlan.tasksTotal > 0) {
+              if (reconciledPlan.tasksCompleted >= reconciledPlan.tasksTotal) {
+                const status =
+                  (latestFeature?.skipTests ?? feature?.skipTests)
+                    ? 'waiting_approval'
+                    : 'verified';
+                await this.updateFeatureStatus(projectPath, featureId, status);
+                finalStatus = status;
+                completionMessageSuffix = ' - auto-finalized (plan complete)';
+              } else {
+                await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+                finalStatus = 'backlog';
+                completionMessageSuffix = ` - plan incomplete (${reconciledPlan.tasksCompleted}/${reconciledPlan.tasksTotal})`;
+              }
+            } else {
+              await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+              finalStatus = 'backlog';
+            }
+          } else {
+            await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+            finalStatus = 'backlog';
+          }
+        } catch (finalizeError) {
+          logger.warn(`Failed to finalize errored feature ${featureId}:`, finalizeError);
+          await this.updateFeatureStatus(projectPath, featureId, 'backlog');
+          finalStatus = 'backlog';
+        }
+
         this.emitAutoModeEvent('auto_mode_error', {
           featureId,
           featureName: feature?.title,
           branchName: feature?.branchName ?? null,
-          error: errorInfo.message,
+          error: `${errorInfo.message}${completionMessageSuffix}`,
           errorType: errorInfo.type,
           projectPath,
+          finalStatus,
         });
 
         // Track this failure and check if we should pause auto mode
